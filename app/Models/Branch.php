@@ -3,22 +3,23 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Model;
 
-class Store extends Model
+class Branch extends Model
 {
     use HasFactory;
 
     protected $fillable = [
+        'store_id',
         'name',
-        'code',
         'address',
         'phone',
     ];
 
-    public function branches()
+    public function store(): BelongsTo
     {
-        return $this->hasMany(Branch::class);
+        return $this->belongsTo(Store::class);
     }
 
     public function users()

@@ -16,6 +16,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'token.expiry' => \App\Http\Middleware\CheckTokenExpiry::class,
             'check.superadmin' => \App\Http\Middleware\CheckSuperAdmin::class,
+            'check.admin' => \App\Http\Middleware\IsAdmin::class,
+            'api.auth.response' => \App\Http\Middleware\ApiAuthResponse::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
