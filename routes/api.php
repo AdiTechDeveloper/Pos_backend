@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\StoreController;
+use App\Http\Controllers\Api\StaffController;
 use Illuminate\Support\Facades\Route;
 
 // login route
@@ -30,4 +31,9 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response', 'check.a
     Route::get('/branches/{id}', [BranchController::class, 'show']);
     Route::put('/branches/{id}', [BranchController::class, 'update']);
     Route::delete('/branches/{id}', [BranchController::class, 'destroy']);
+});
+
+// staff routes
+Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response', 'check.admin'])->group(function () {
+    Route::post('/staff', [StaffController::class, 'store']);
 });
