@@ -3,7 +3,6 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\StoreController;
-use App\Http\Middleware\ApiAuthResponse;
 use Illuminate\Support\Facades\Route;
 
 // login route
