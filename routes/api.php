@@ -9,9 +9,11 @@ use Illuminate\Support\Facades\Route;
 // login route
 Route::post('/login', [AuthController::class, 'login']);
 
-// stores routes
+// store registration route
+Route::post('/stores', [StoreController::class, 'store']);
+
+// stores routes for superadmin users
 Route::middleware(['auth:sanctum', 'token.expiry', 'check.superadmin'])->group(function () {
-    Route::post('/stores', [StoreController::class, 'store']);
     Route::get('/stores', [StoreController::class, 'index']);
     Route::get('/stores/{id}', [StoreController::class, 'show']);
     Route::put('/stores/{id}', [StoreController::class, 'update']);

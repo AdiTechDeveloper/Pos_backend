@@ -65,7 +65,7 @@ class StoreController extends Controller
      */
     public function store(Request $request)
     {
-        $user = Auth::user();
+        // $user = Auth::user();
 
         $validated = $request->validate([
             'name' => 'required|string|max:255|unique:stores,name',
@@ -95,7 +95,7 @@ class StoreController extends Controller
                 'password' => Hash::make($adminPassword),
                 'role' => 'admin',
                 'is_active' => true,
-                'created_by' => $user->id,
+                // 'created_by' => $user->id,
             ]);
 
             DB::commit();
@@ -117,7 +117,7 @@ class StoreController extends Controller
                 ]
             ], 201);
         } catch (\Exception $e) {
-            return response()->json(['message' => 'An error occurred while creating the store.'], 500);
+            return response()->json(['message' => 'An error occurred while creating the store.', $e->getMessage()], 500);
         }
     }
 
