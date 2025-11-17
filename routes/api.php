@@ -36,4 +36,9 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response', 'check.a
 // staff routes
 Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response', 'check.admin'])->group(function () {
     Route::post('/staff', [StaffController::class, 'store']);
+    Route::get('/staff', [StaffController::class, 'index']);
+    Route::get('/staff/{id}', [StaffController::class, 'show']);
+    Route::put('/staff/{id}', [StaffController::class, 'update']);
+    Route::delete('/staff/{id}', [StaffController::class, 'destroy']);
+    Route::patch('/staff/{id}/toggle-status', [StaffController::class, 'toggleActive']);
 });
