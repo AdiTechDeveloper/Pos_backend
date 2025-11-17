@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
+use App\Http\Controllers\Api\ManagerBranchController;
 use App\Http\Controllers\Api\StoreController;
 use App\Http\Controllers\Api\StaffController;
 use Illuminate\Support\Facades\Route;
@@ -43,4 +44,14 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response', 'check.a
     Route::put('/staff/{id}', [StaffController::class, 'update']);
     Route::delete('/staff/{id}', [StaffController::class, 'destroy']);
     Route::patch('/staff/{id}/toggle-status', [StaffController::class, 'toggleActive']);
+});
+
+// manager routes
+Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(function () {
+    // Manager logged-in branches
+    Route::get('/manager/branches', [ManagerBranchController::class, 'myBranches']);
+    // Branch-wise staff
+    Route::get('/manager/branches/{branchId}/staff', [ManagerBranchController::class, 'branchStaff']);
+    // Staff detail
+    Route::get('/manager/staff/{staffId}', [ManagerBranchController::class, 'staffDetail']);
 });
