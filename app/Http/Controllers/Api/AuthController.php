@@ -52,6 +52,7 @@ class AuthController extends Controller
                 'username' => $user->username,
                 'role' => $user->role,
                 'store_id' => $user->store_id,
+                'branch_ids' => $user->branches()->pluck('branches.id'),
                 'is_active' => $user->is_active
             ],
             'token' => $plainTextToken,
