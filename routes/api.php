@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\BrandController;
 use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\GstRateController;
 use App\Http\Controllers\Api\ManagerBranchController;
 use App\Http\Controllers\Api\StoreController;
 use App\Http\Controllers\Api\StaffController;
@@ -88,4 +89,14 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     Route::post('/suppliers', [SupplierController::class, 'store']);
     Route::put('/suppliers/{id}', [SupplierController::class, 'update']);
     Route::delete('/suppliers/{id}', [SupplierController::class, 'destroy']);
+});
+
+// GST Rate routes
+Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(function () {
+    Route::get('/gst-rates', [GstRateController::class, 'index']);
+    Route::get('/gst-rates/{id}', [GstRateController::class, 'show']);
+    Route::post('/gst-rates', [GstRateController::class, 'store']);
+    Route::put('/gst-rates/{id}', [GstRateController::class, 'update']);
+    Route::delete('/gst-rates/{id}', [GstRateController::class, 'destroy']);
+    Route::patch('/gst-rates/{id}/toggle-status', [GstRateController::class, 'toggleActive']);
 });
