@@ -3,38 +3,38 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Category;
+use App\Models\Brand;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
-class CategoryController extends Controller
+class BrandController extends Controller
 {
     public function index()
     {
         $storeId = Auth::user()->store_id;
-        $categories = Category::where('store_id', $storeId)->get();
+        $brands = Brand::where('store_id', $storeId)->get();
 
         return response()->json([
             'status' => true,
-            'categories' => $categories
+            'brands' => $brands
         ], 200);
     }
 
     public function show($id)
     {
         $storeId = Auth::user()->store_id;
-        $category = Category::where('store_id', $storeId)->where('id', $id)->first();
+        $brand = Brand::where('store_id', $storeId)->where('id', $id)->first();
 
-        if (!$category) {
+        if (!$brand) {
             return response()->json([
                 'status' => false,
-                'message' => 'Category not found'
+                'message' => 'Brand not found'
             ], 404);
         }
 
         return response()->json([
             'status' => true,
-            'category' => $category
+            'brand' => $brand
         ], 200);
     }
 
@@ -43,7 +43,6 @@ class CategoryController extends Controller
         try {
             $request->validate([
                 'name' => 'required|string|max:255',
-                'parent_id' => 'nullable|exists:categories,id',
                 'description' => 'nullable|string',
             ]);
 
@@ -58,23 +57,22 @@ class CategoryController extends Controller
 
             $storeId = Auth::user()->store_id;
 
-            $category = Category::create([
+            $brand = Brand::create([
                 'store_id' => $storeId,
                 'name' => $request->name,
-                'parent_id' => $request->parent_id,
                 'description' => $request->description,
                 'created_by' => Auth::id(),
             ]);
 
             return response()->json([
                 'status' => true,
-                'message' => 'Category created successfully',
-                'category' => $category
+                'message' => 'Brand created successfully',
+                'brand' => $brand
             ], 201);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
-                'message' => 'An error occurred while creating the category.',
+                'message' => 'An error occurred while creating the brand.',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -85,7 +83,6 @@ class CategoryController extends Controller
         try {
             $request->validate([
                 'name' => 'required|string|max:255',
-                'parent_id' => 'nullable|exists:categories,id',
                 'description' => 'nullable|string',
             ]);
 
@@ -100,31 +97,30 @@ class CategoryController extends Controller
 
             $storeId = Auth::user()->store_id;
 
-            $category = Category::where('store_id', $storeId)->where('id', $id)->first();
+            $brand = Brand::where('store_id', $storeId)->where('id', $id)->first();
 
-            if (!$category) {
+            if (!$brand) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Category not found'
+                    'message' => 'Brand not found'
                 ], 404);
             }
 
-            $category->update([
+            $brand->update([
                 'name' => $request->name,
-                'parent_id' => $request->parent_id,
                 'description' => $request->description,
                 'updated_by' => Auth::id(),
             ]);
 
             return response()->json([
                 'status' => true,
-                'message' => 'Category updated successfully',
-                'category' => $category
+                'message' => 'Brand updated successfully',
+                'brand' => $brand
             ], 200);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
-                'message' => 'An error occurred while updating the category.',
+                'message' => 'An error occurred while updating the brand.',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -144,70 +140,27 @@ class CategoryController extends Controller
 
             $storeId = Auth::user()->store_id;
 
-            $category = Category::where('store_id', $storeId)->where('id', $id)->first();
+            $brand = Brand::where('store_id', $storeId)->where('id', $id)->first();
 
-            if (!$category) {
+            if (!$brand) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Category not found'
+                    'message' => 'Brand not found'
                 ], 404);
             }
 
-            $category->delete();
+            $brand->delete();
 
             return response()->json([
                 'status' => true,
-                'message' => 'Category deleted successfully'
+                'message' => 'Brand deleted successfully'
             ], 200);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
-                'message' => 'An error occurred while deleting the category.',
+                'message' => 'An error occurred while deleting the brand.',
                 'error' => $e->getMessage()
             ], 500);
         }
-    }
-
-    public function parentCategories()
-    {
-        $storeId = Auth::user()->store_id;
-
-        $parentCategories = Category::where('store_id', $storeId)
-            ->whereNull('parent_id')
-            ->get();
-
-        return response()->json([
-            'status' => true,
-            'parent_categories' => $parentCategories
-        ], 200);
-    }
-
-    public function subCategories($parentId)
-    {
-        $storeId = Auth::user()->store_id;
-
-        $subCategories = Category::where('store_id', $storeId)
-            ->where('parent_id', $parentId)
-            ->get();
-
-        return response()->json([
-            'status' => true,
-            'sub_categories' => $subCategories
-        ], 200);
-    }
-
-    public function categoryTree()
-    {
-        $storeId = Auth::user()->store_id;
-
-        $categories = Category::where('store_id', $storeId)
-            ->whereNull('parent_id')
-            ->with('childrenRecursive')
-            ->get();
-
-        return response()->json([
-            'status' => true,
-            'category_tree' => $categories
-        ], 200);
     }
 }
