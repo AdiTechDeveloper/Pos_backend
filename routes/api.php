@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
+use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\ManagerBranchController;
 use App\Http\Controllers\Api\StoreController;
 use App\Http\Controllers\Api\StaffController;
@@ -54,4 +55,17 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     Route::get('/manager/branches/{branchId}/staff', [ManagerBranchController::class, 'branchStaff']);
     // Staff detail
     Route::get('/manager/staff/{staffId}', [ManagerBranchController::class, 'staffDetail']);
+});
+
+// category routes
+Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(function () {
+    Route::get('/categories/parents', [CategoryController::class, 'parentCategories']);
+    Route::get('/categories/{id}/subcategories', [CategoryController::class, 'subCategories']);
+    Route::get('/categories/tree', [CategoryController::class, 'categoryTree']);
+
+    Route::get('/categories', [CategoryController::class, 'index']);
+    Route::get('/categories/{id}', [CategoryController::class, 'show']);
+    Route::post('/categories', [CategoryController::class, 'store']);
+    Route::put('/categories/{id}', [CategoryController::class, 'update']);
+    Route::delete('/categories/{id}', [CategoryController::class, 'destroy']);
 });
