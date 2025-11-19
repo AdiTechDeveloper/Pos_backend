@@ -199,8 +199,8 @@ class GstRateController extends Controller
                 ], 403);
             }
 
-            $gstRate->active = ! $gstRate->active;
-            $gstRate->updated_by = $gstRate->id;
+            $gstRate->active = !$gstRate->active;
+            $gstRate->updated_by = $user->id;
             $gstRate->save();
 
             return response()->json([
