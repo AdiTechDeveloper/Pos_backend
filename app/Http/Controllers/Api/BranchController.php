@@ -16,7 +16,7 @@ class BranchController extends Controller
     public function index()
     {
         $user = Auth::user();
-        $branches = Branch::where('store_id', $user->store_id)->get();
+        $branches = Branch::where('store_id', $user->store_id)->with('store')->get();
 
         return response()->json([
             'status' => true,
