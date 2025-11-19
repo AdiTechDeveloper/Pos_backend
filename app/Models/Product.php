@@ -1,0 +1,40 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Product extends Model
+{
+    protected $fillable = [
+        'store_id',
+        'sku',
+        'barcode',
+        'name',
+        'brand_id',
+        'category_id',
+        'hsn_code',
+        'gst_rate_id',
+        'mrp',
+        'selling_price',
+        'cost_price',
+        'created_by',
+        'updated_by',
+    ];
+
+    // Relationships
+    public function brand()
+    {
+        return $this->belongsTo(Brand::class);
+    }
+
+    public function category()
+    {
+        return $this->belongsTo(Category::class);
+    }
+
+    public function gstRate()
+    {
+        return $this->belongsTo(GstRate::class);
+    }
+}
