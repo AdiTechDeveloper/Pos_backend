@@ -29,6 +29,11 @@ class PurchaseBill extends Model
         return $this->hasMany(PurchaseLine::class);
     }
 
+    public function branch()
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
     public function supplier()
     {
         return $this->belongsTo(Supplier::class);

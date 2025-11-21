@@ -115,5 +115,7 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
 
 // Purchasebill routes
 Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(function () {
+    Route::get('/purchase-bill', [PurchaseBillController::class, 'index']);
+    Route::get('/purchase-bill/{id}', [PurchaseBillController::class, 'show']);
     Route::post('/purchase-bill', [PurchaseBillController::class, 'store']);
 });

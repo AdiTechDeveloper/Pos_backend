@@ -19,6 +19,107 @@ use Illuminate\Support\Facades\DB;
 
 class PurchaseBillController extends Controller
 {
+    public function index()
+    {
+        try {
+            $user = Auth::user();
+
+            $query = PurchaseBill::with([
+                'branch:id,name',
+                'supplier:id,name',
+                'lines.product:id,name,sku',
+                'lines.inventory'
+            ]);
+
+            if ($user->role === 'manager') {
+                $query->where('branch_id', $user->branch_id);
+            }
+
+            if ($user->role === 'admin') {
+                $query->whereHas('branch', function ($q) use ($user) {
+                    $q->where('store_id', $user->store_id);
+                });
+            }
+
+            $purchaseBills = $query
+                ->orderBy('id', 'DESC')
+                ->get();
+
+            return response()->json([
+                'status' => true,
+                'data' => $purchaseBills
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function show($id)
+    {
+        try {
+            $user = Auth::user();
+
+            $bill = PurchaseBill::with([
+                'branch:id,name',
+                'supplier:id,name',
+                'lines.product:id,name,sku',
+                'lines.inventory'
+            ])->find($id);
+
+            if (! $bill) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Purchase bill not found'
+                ], 404);
+            }
+
+            if ($user->role === 'admin') {
+
+                // Admin can see all bills for their store only
+                if ($bill->store_id != $user->store_id) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'Unauthorized - Admin can only access purchase bills of their own store'
+                    ], 403);
+                }
+
+                return response()->json([
+                    'status' => true,
+                    'data' => $bill
+                ]);
+            }
+
+            if ($user->role === 'manager') {
+
+                // Manager must belong to same store AND same branch
+                if ($bill->store_id != $user->store_id || $bill->branch_id != $user->branch_id) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'Unauthorized - Manager can access purchase bills of their own branch only'
+                    ], 403);
+                }
+
+                return response()->json([
+                    'status' => true,
+                    'data' => $bill
+                ]);
+            }
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized'
+            ], 403);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -217,4 +318,6 @@ class PurchaseBillController extends Controller
             ], 500);
         }
     }
+
+    
 }

@@ -24,4 +24,9 @@ class Inventory extends Model
     {
         return $this->belongsTo(Product::class);
     }
+
+    public function line()
+    {
+        return $this->belongsTo(PurchaseLine::class, 'id');
+    }
 }
