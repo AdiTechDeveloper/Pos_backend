@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\GstRateController;
 use App\Http\Controllers\Api\ManagerBranchController;
 use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\PurchaseBillController;
 use App\Http\Controllers\Api\StoreController;
 use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\SupplierController;
@@ -110,4 +111,9 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     Route::put('/products/{id}', [ProductController::class, 'update']);
     Route::delete('/products/{id}', [ProductController::class, 'destroy']);
     Route::get('/products/{id}/barcode', [ProductController::class, 'barcodeImage']);
+});
+
+// Purchasebill routes
+Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(function () {
+    Route::post('/purchase-bill', [PurchaseBillController::class, 'store']);
 });

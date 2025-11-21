@@ -12,6 +12,7 @@ class Supplier extends Model
         'gstin',
         'contact',
         'address',
+        'state',
         'created_by',
         'updated_by'
     ];

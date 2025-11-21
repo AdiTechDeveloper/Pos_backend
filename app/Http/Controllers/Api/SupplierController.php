@@ -46,6 +46,7 @@ class SupplierController extends Controller
                 'gstin' => 'required|string|max:15',
                 'contact' => 'required|string|max:20',
                 'address' => 'required|string',
+                'state' => 'required|string|max:20'
             ]);
 
             $user = Auth::user();
@@ -65,6 +66,7 @@ class SupplierController extends Controller
                 'gstin' => $request->gstin,
                 'contact' => $request->contact,
                 'address' => $request->address,
+                'state' => $request->state,
                 'created_by' => Auth::id(),
             ]);
 
@@ -90,6 +92,7 @@ class SupplierController extends Controller
                 'gstin' => 'required|string|max:15',
                 'contact' => 'required|string|max:20',
                 'address' => 'required|string',
+                'state' => 'required|string|max:20',
             ]);
 
             $user = Auth::user();
@@ -117,6 +120,7 @@ class SupplierController extends Controller
                 'gstin' => $request->gstin,
                 'contact' => $request->contact,
                 'address' => $request->address,
+                'state' => $request->state,
                 'updated_by' => Auth::id(),
             ]);
 

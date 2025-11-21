@@ -70,6 +70,7 @@ class BranchController extends Controller
                 'name.unique' => 'Branch name already exists for this store.',
             ],
             'address' => 'nullable|string|max:500',
+            'state' => 'required|string|max:20',
             'phone' => 'nullable|string|max:20',
         ]);
 
@@ -77,6 +78,7 @@ class BranchController extends Controller
             'store_id' => $store_id,
             'name' => $validated['name'],
             'address' => $validated['address'] ?? null,
+            'state' => $validated['state'],
             'phone' => $validated['phone'] ?? null,
         ]);
 
@@ -111,6 +113,7 @@ class BranchController extends Controller
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255',
             'address' => 'sometimes|string|max:500',
+            'state' => 'sometimes|string|max:20',
             'phone' => 'sometimes|string|max:20',
         ]);
 

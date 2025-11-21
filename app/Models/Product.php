@@ -20,6 +20,7 @@ class Product extends Model
         'cost_price',
         'created_by',
         'updated_by',
+        'stock'
     ];
 
     // Relationships

@@ -70,6 +70,7 @@ class StoreController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255|unique:stores,name',
             'address' => 'nullable|string|max:500',
+            'state' => 'required|string|max:20',
             'phone' => 'nullable|string|max:20',
         ]);
 
@@ -82,6 +83,7 @@ class StoreController extends Controller
                 'name' => $validated['name'],
                 'code' => $storeCode,
                 'address' => $validated['address'] ?? null,
+                'state' => $validated['state'],
                 'phone' => $validated['phone'] ?? null,
             ]);
 
@@ -107,6 +109,7 @@ class StoreController extends Controller
                     'name' => $store->name,
                     'code' => $store->code,
                     'address' => $store->address,
+                    'state' => $store->state,
                     'phone' => $store->phone,
                 ],
                 'admin_user' => [
@@ -152,6 +155,7 @@ class StoreController extends Controller
 
         $validated = $request->validate([
             'address' => 'nullable|string|max:500',
+            'state' => 'nullable|string|max:20',
             'phone' => 'nullable|string|max:15',
         ]);
 

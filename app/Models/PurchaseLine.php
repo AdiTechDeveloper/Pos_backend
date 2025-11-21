@@ -24,9 +24,14 @@ class PurchaseLine extends Model
         'igst'
     ];
 
+    public function bill()
+    {
+        return $this->belongsTo(PurchaseBill::class, 'purchase_bill_id');
+    }
+
     public function gstRate()
     {
-        return $this->belongsTo(GstRate::class);
+        return $this->belongsTo(GstRate::class, 'gst_rate_id');
     }
 
     public function product()

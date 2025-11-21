@@ -15,6 +15,7 @@ class Branch extends Model
         'store_id',
         'name',
         'address',
+        'state',
         'phone',
     ];
 
