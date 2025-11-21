@@ -32,7 +32,8 @@ class PurchaseBillController extends Controller
             ]);
 
             if ($user->role === 'manager') {
-                $query->where('branch_id', $user->branch_id);
+                $managerBranchIds = $user->branches()->pluck('branches.id');
+                $query->whereIn('branch_id', $managerBranchIds);
             }
 
             if ($user->role === 'admin') {
@@ -93,12 +94,19 @@ class PurchaseBillController extends Controller
             }
 
             if ($user->role === 'manager') {
-
-                // Manager must belong to same store AND same branch
-                if ($bill->store_id != $user->store_id || $bill->branch_id != $user->branch_id) {
+                if ($bill->store_id != $user->store_id) {
                     return response()->json([
                         'status' => false,
-                        'message' => 'Unauthorized - Manager can access purchase bills of their own branch only'
+                        'message' => 'Unauthorized - Manager can access only their store purchase bills'
+                    ], 403);
+                }
+
+                $managerBranchIds = $user->branches()->pluck('branches.id');
+
+                if (! $managerBranchIds->contains($bill->branch_id)) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'Unauthorized - Manager can access purchase bills of their assigned branch only'
                     ], 403);
                 }
 
@@ -318,6 +326,4 @@ class PurchaseBillController extends Controller
             ], 500);
         }
     }
-
-    
 }

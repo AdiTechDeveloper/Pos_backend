@@ -38,4 +38,9 @@ class Product extends Model
     {
         return $this->belongsTo(GstRate::class);
     }
+
+    public function inventories()
+    {
+        return $this->hasMany(Inventory::class, 'product_id', 'id');
+    }
 }

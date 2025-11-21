@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\GstRateController;
 use App\Http\Controllers\Api\ManagerBranchController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PurchaseBillController;
+use App\Http\Controllers\Api\SalesBillController;
 use App\Http\Controllers\Api\StoreController;
 use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\SupplierController;
@@ -118,4 +119,12 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     Route::get('/purchase-bill', [PurchaseBillController::class, 'index']);
     Route::get('/purchase-bill/{id}', [PurchaseBillController::class, 'show']);
     Route::post('/purchase-bill', [PurchaseBillController::class, 'store']);
+});
+
+// Salesbill routes
+Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(function () {
+    // Product scan (used by POS)
+    Route::post('/sales/scan', [SalesBillController::class, 'scanBarcode']);
+    Route::post('/sales-bills', [SalesBillController::class, 'store']);
+    Route::get('/sales-bills', [SalesBillController::class, 'gstReport']);
 });
