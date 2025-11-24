@@ -14,6 +14,8 @@ class SalesBillLine extends Model
         'qty',
         'rate',
         'amount',
+        'cogs',
+        'profit',
         'cgst',
         'sgst',
         'igst',

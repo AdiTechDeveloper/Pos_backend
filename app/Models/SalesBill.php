@@ -14,6 +14,9 @@ class SalesBill extends Model
         'subtotal',
         'total_gst',
         'total_amount',
+        'total_saved',
+        'total_cogs',
+        'total_profit',
         'cash_received',
         'balance_return',
         'created_by'

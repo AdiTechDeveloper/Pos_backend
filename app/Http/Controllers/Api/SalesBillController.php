@@ -10,6 +10,7 @@ use App\Models\SalesBill;
 use App\Models\SalesBillLine;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class SalesBillController extends Controller
 {
@@ -41,81 +42,152 @@ class SalesBillController extends Controller
     {
         $request->validate([
             'lines' => 'required|array|min:1',
-            'lines.*.product_id' => 'required',
+            'lines.*.product_id' => 'required|integer',
             'lines.*.qty' => 'required|numeric|min:1',
         ]);
 
         try {
-            $user = Auth::user();
+            DB::beginTransaction();
 
+            $user = Auth::user();
             $branchId = $user->branches->pluck('id')->first();
 
+            if (!$branchId) {
+                return response()->json([
+                    'status' => false,
+                    'message' => "User has no branch assigned."
+                ], 400);
+            }
+
+            // CREATE BILL HEADER
             $bill = SalesBill::create([
                 'store_id'  => $user->store_id,
                 'branch_id' => $branchId,
                 'user_id'   => $user->id,
-                'bill_no'   => 'SB-' . time()
+                'bill_no'   => 'SB-' . time(),
+                'created_by' => $user->id,
             ]);
 
             $subtotal = 0;
             $totalGst = 0;
+            $totalSaved = 0;
+            $totalCogs = 0;
+            $totalProfit = 0;
 
             foreach ($request->lines as $line) {
+
                 $product = Product::with('gstRate')->findOrFail($line['product_id']);
 
-                // FIND INVENTORY FIFO
-                $inventory = Inventory::where('product_id', $product->id)
-                    ->where('branch_id', $branchId)
-                    ->orderBy('expiry_date')
-                    ->first();
-
-                if (! $inventory || $inventory->qty < $line['qty']) {
-                    return response()->json(['status' => false, 'message' => 'Insufficient stock'], 400);
+                if ($product->selling_price <= 0) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => "Invalid selling price for {$product->name}"
+                    ], 400);
                 }
 
+                // ----------------------------------------------------
+                // 1️⃣ FIFO INVENTORY (NOT BY expiry, but true FIFO)
+                // ----------------------------------------------------
+                $requiredQty = $line['qty'];
+
+                $fifoBatches = Inventory::where('product_id', $product->id)
+                    ->where('branch_id', $branchId)
+                    ->where('qty', '>', 0)
+                    ->orderBy('id') // FIFO
+                    ->lockForUpdate()
+                    ->get();
+
+                if ($fifoBatches->sum('qty') < $line['qty']) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => "Insufficient stock for {$product->name}"
+                    ], 400);
+                }
+
+                // COGS Calculation: total cost of consumed batches
+                $remaining = $requiredQty;
+                $totalLineCogs = 0;
+                $firstInventoryId = null;
+
+                foreach ($fifoBatches as $batch) {
+                    if ($remaining <= 0) break;
+
+                    $consume = min($batch->qty, $remaining);
+
+                    // cost = purchase_rate × consumed_qty
+                    $totalLineCogs += ($batch->rate * $consume);
+
+                    // record first batch ID for linking
+                    if (!$firstInventoryId) {
+                        $firstInventoryId = $batch->id;
+                    }
+
+                    // reduce stock
+                    $batch->qty -= $consume;
+                    $batch->save();
+
+                    $remaining -= $consume;
+                }
+
+                // ----------------------------------------------------
+                // 2️⃣ SAVING (MRP - Selling Price)
+                // ----------------------------------------------------
+                $mrp = $product->mrp ?? $product->selling_price;
+                $lineSaving = ($mrp - $product->selling_price) * $line['qty'];
+                $totalSaved += $lineSaving;
+
+                // ----------------------------------------------------
+                // 3️⃣ GST CALCULATION
+                // ----------------------------------------------------
                 $gstRate = $product->gstRate ? $product->gstRate->rate : 0;
                 $half = $gstRate / 2;
 
-                $branch = $user->branches->first();
-
-                $branchState = $branch->state;
                 $storeState  = $user->store->state;
+                $branchState = $user->branches->first()->state;
+
+                $taxable = $product->selling_price * $line['qty'];
 
                 if ($gstRate == 0) {
                     $cgst = $sgst = $igst = 0;
                 } else {
                     if ($storeState == $branchState) {
                         // INTRA
-                        $cgst = ($product->selling_price * $half / 100) * $line['qty'];
-                        $sgst = ($product->selling_price * $half / 100) * $line['qty'];
+                        $cgst = ($taxable * $half) / 100;
+                        $sgst = ($taxable * $half) / 100;
                         $igst = 0;
                     } else {
                         // INTER
                         $cgst = 0;
                         $sgst = 0;
-                        $igst = ($product->selling_price * $gstRate / 100) * $line['qty'];
+                        $igst = ($taxable * $gstRate) / 100;
                     }
                 }
 
-                $amount = $line['qty'] * $product->selling_price;
                 $totalLineGst = $cgst + $sgst + $igst;
+                $amount = $taxable;
 
-                // CREATE LINE
+                // ----------------------------------------------------
+                // 4️⃣ CREATE SALES BILL LINE
+                // ----------------------------------------------------
                 $salesLine = SalesBillLine::create([
                     'sales_bill_id' => $bill->id,
                     'product_id'    => $product->id,
                     'branch_id'     => $branchId,
-                    'inventory_id'  => $inventory->id,
+                    'inventory_id'  => $firstInventoryId,
                     'qty'           => $line['qty'],
                     'rate'          => $product->selling_price,
                     'amount'        => $amount,
                     'cgst'          => $cgst,
                     'sgst'          => $sgst,
                     'igst'          => $igst,
-                    'total_gst'     => $totalLineGst
+                    'total_gst'     => $totalLineGst,
+                    'cogs'          => $totalLineCogs,                     // Added for profit
+                    'profit'        => $amount - $totalLineCogs,          // Profit calculation
                 ]);
 
-                // CREATE OUTPUT GST
+                // ----------------------------------------------------
+                // 5️⃣ OUTPUT GST LEDGER (sales)
+                // ----------------------------------------------------
                 GstOutputLedger::create([
                     'sales_bill_id'      => $bill->id,
                     'sales_bill_line_id' => $salesLine->id,
@@ -127,31 +199,38 @@ class SalesBillController extends Controller
                     'total_gst'          => $totalLineGst,
                 ]);
 
-                // UPDATE INVENTORY
-                $inventory->qty -= $line['qty'];
-                $inventory->save();
-
                 $subtotal += $amount;
                 $totalGst += $totalLineGst;
+                $totalCogs += $totalLineCogs;
+                $totalProfit += ($taxable - $totalLineCogs);
             }
 
-            // FINAL BILL UPDATE
+            // ----------------------------------------------------
+            // 6️⃣ UPDATE SALES BILL TOTALS
+            // ----------------------------------------------------
             $bill->update([
-                'subtotal'     => $subtotal,
-                'total_gst'    => $totalGst,
-                'total_amount' => $subtotal + $totalGst
+                'subtotal'     => round($subtotal, 2),
+                'total_gst'    => round($totalGst, 2),
+                'total_amount' => round($subtotal + $totalGst, 2),
+                'total_saved'  => round($totalSaved, 2),
+                'total_cogs'   => round($totalCogs, 2),
+                'total_profit' => round($totalProfit, 2),
             ]);
 
+            DB::commit();
+
             return response()->json([
-                'status' => true,
+                'status'  => true,
                 'message' => 'Sales bill created successfully',
-                'data' => $bill->load('lines')
+                'data'    => $bill->load('lines')
             ]);
         } catch (\Exception $e) {
+            DB::rollBack();
+
             return response()->json([
-                'status' => false,
+                'status'  => false,
                 'message' => 'An error occurred while creating the sales bill.',
-                'error' => $e->getMessage()
+                'error'   => $e->getMessage()
             ], 500);
         }
     }
