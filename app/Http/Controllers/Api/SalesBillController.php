@@ -11,6 +11,7 @@ use App\Models\SalesBillLine;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Milon\Barcode\Facades\DNS1DFacade as DNS1D;
 
 class SalesBillController extends Controller
 {
@@ -233,6 +234,69 @@ class SalesBillController extends Controller
                 'error'   => $e->getMessage()
             ], 500);
         }
+    }
+
+    public function getPrintData($id)
+    {
+        $bill = SalesBill::with([
+            'store',
+            'branch',
+            'user',
+            'lines.product',
+            'lines.gstRate'
+        ])->findOrFail($id);
+
+        $items = $bill->lines->map(function ($line) {
+            return [
+                'name'      => $line->product->name,
+                'qty'       => $line->qty,
+                'mrp'       => $line->product->mrp,
+                'selling'   => $line->product->selling_price,
+                'amount'    => $line->amount,
+                'saved'     => ($line->product->mrp - $line->product->selling_price) * $line->qty,
+                'cgst'      => $line->cgst,
+                'sgst'      => $line->sgst,
+                'igst'      => $line->igst,
+                'gst_total' => $line->total_gst,
+            ];
+        });
+
+        $barcode = base64_encode(
+            DNS1D::getBarcodePNG($bill->bill_no, 'C128', 2.5, 80)
+        );
+
+        return response()->json([
+            'status'   => true,
+
+            'store'    => [
+                'name'    => $bill->store->name,
+                'state'   => $bill->store->state,
+                'phone'   => $bill->store->phone,
+            ],
+
+            'branch'   => [
+                'name'    => $bill->branch->name,
+                'address' => $bill->branch->address,
+            ],
+
+            'bill'     => [
+                'number'       => $bill->bill_no,
+                'date'         => $bill->created_at->format('d-m-Y H:i'),
+                'cashier'      => $bill->user->name,
+                'subtotal'     => $bill->subtotal,
+                'total_gst'    => $bill->total_gst,
+                'total_amount' => $bill->total_amount,
+                'total_saved'  => $bill->total_saved,
+                'cgst_total'   => $items->sum('cgst'),
+                'sgst_total'   => $items->sum('sgst'),
+            ],
+
+            'items' => $items,
+
+            'barcode' => "data:image/png;base64," . $barcode,
+
+            'footer' => "Thank You! Visit Again"
+        ]);
     }
 
     public function gstReport()

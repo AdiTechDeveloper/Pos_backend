@@ -27,6 +27,11 @@ class SalesBill extends Model
         return $this->hasMany(SalesBillLine::class);
     }
 
+    public function store()
+    {
+        return $this->belongsTo(Store::class);
+    }
+
     public function branch()
     {
         return $this->belongsTo(Branch::class);

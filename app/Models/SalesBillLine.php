@@ -36,4 +36,9 @@ class SalesBillLine extends Model
     {
         return $this->belongsTo(Inventory::class);
     }
+
+    public function gstRate()
+    {
+        return $this->belongsTo(GstRate::class);
+    }
 }
