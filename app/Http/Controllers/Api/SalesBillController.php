@@ -8,6 +8,7 @@ use App\Models\Inventory;
 use App\Models\Product;
 use App\Models\SalesBill;
 use App\Models\SalesBillLine;
+use App\Models\SalesBillPayment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -80,6 +81,8 @@ class SalesBillController extends Controller
                 'branch_id'     => $branchId,
                 'user_id'       => $user->id,
                 'bill_no'       => $billNo,
+                'bill_status' => 'pending',
+                'payment_status' => 'unpaid',
                 'created_by'    => $user->id,
             ]);
 
@@ -246,6 +249,98 @@ class SalesBillController extends Controller
                 'status'  => false,
                 'message' => 'An error occurred while creating the sales bill.',
                 'error'   => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function pay(Request $request)
+    {
+        $request->validate([
+            'sales_bill_id' => 'required|integer',
+            'payments' => 'required|array|min:1',
+            'payments.*.method' => 'required|string',
+            'payments.*.amount' => 'required|numeric|min:0.01',
+            'payments.*.transaction_id' => 'nullable|string',
+            'payments.*.gateway' => 'nullable|string',
+        ]);
+
+        $idempotencyKey = $request->header('Idempotency-Key');
+
+        if (!$idempotencyKey) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Idempotency-Key header is required.'
+            ], 400);
+        }
+
+        $bill = SalesBill::findOrFail($request->sales_bill_id);
+
+        if ($bill->last_idempotency_key === $idempotencyKey) {
+            return response()->json([
+                'status' => true,
+                'message' => 'Duplicate request ignored. Returning previous result.',
+                'bill' => $bill->load('payments')
+            ]);
+        }
+
+        DB::beginTransaction();
+
+        try {
+            $totalPaidThisTime = 0;
+
+            foreach ($request->payments as $payment) {
+
+                SalesBillPayment::create([
+                    'sales_bill_id'  => $bill->id,
+                    'method'         => $payment['method'],        // cash/card/upi/online
+                    'amount'         => $payment['amount'],
+                    'transaction_id' => $payment['transaction_id'] ?? null,
+                    'gateway'        => $payment['gateway'] ?? null,
+                    'status'         => 'success',
+                ]);
+
+                $totalPaidThisTime += $payment['amount'];
+            }
+
+            // Update total paid amount in bill  
+            $bill->cash_received += $totalPaidThisTime;
+
+            // Calculate payment status
+            if ($bill->cash_received >= $bill->total_amount) {
+
+                // FULLY PAID
+                $bill->payment_status = 'paid';
+                $bill->bill_status    = 'completed';
+
+                // Return balance if extra paid
+                $bill->balance_return = $bill->cash_received - $bill->total_amount;
+            } elseif ($bill->cash_received > 0) {
+
+                // PARTIAL PAID
+                $bill->payment_status = 'partial';
+            } else {
+
+                // UNPAID
+                $bill->payment_status = 'unpaid';
+            }
+
+            $bill->last_idempotency_key = $idempotencyKey;
+            $bill->save();
+
+            DB::commit();
+
+            return response()->json([
+                'status' => true,
+                'message' => "Payment recorded successfully",
+                'bill' => $bill->load('payments'),
+            ]);
+        } catch (\Exception $e) {
+
+            DB::rollBack();
+
+            return response()->json([
+                'status' => false,
+                'message' => $e->getMessage(),
             ], 500);
         }
     }

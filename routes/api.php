@@ -128,6 +128,8 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     Route::post('/sales-bills', [SalesBillController::class, 'store']);
     // gst report
     Route::get('/sales-bills', [SalesBillController::class, 'gstReport']);
+    // Payment method
+    Route::post('/sales-bills/pay', [SalesBillController::class, 'pay']);
     // print bill
     Route::get('/sales-bill/{id}/print-data', [SalesBillController::class, 'getPrintData']);
 });

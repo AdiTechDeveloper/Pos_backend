@@ -19,6 +19,9 @@ class SalesBill extends Model
         'total_profit',
         'cash_received',
         'balance_return',
+        'payment_status',
+        'last_idempotency_key',
+        'bill_status',
         'created_by'
     ];
 
@@ -40,5 +43,10 @@ class SalesBill extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function payments()
+    {
+        return $this->hasMany(SalesBillPayment::class);
     }
 }
