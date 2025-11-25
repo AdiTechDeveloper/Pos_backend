@@ -60,13 +60,27 @@ class SalesBillController extends Controller
                 ], 400);
             }
 
+            $storeId   = str_pad($user->store_id, 2, '0', STR_PAD_LEFT);
+            $brId      = str_pad($branchId, 2, '0', STR_PAD_LEFT);
+            $counterId = str_pad($user->id, 2, '0', STR_PAD_LEFT);
+            $date      = now()->format('ymd'); // YYMMDD
+
+            $todayCount = SalesBill::where('store_id', $user->store_id)
+                ->where('branch_id', $branchId)
+                ->whereDate('created_at', today())
+                ->count();
+
+            $seq = str_pad($todayCount + 1, 4, '0', STR_PAD_LEFT);
+
+            $billNo = "{$storeId}{$brId}{$counterId}{$date}{$seq}";
+
             // CREATE BILL HEADER
             $bill = SalesBill::create([
-                'store_id'  => $user->store_id,
-                'branch_id' => $branchId,
-                'user_id'   => $user->id,
-                'bill_no'   => 'SB-' . time(),
-                'created_by' => $user->id,
+                'store_id'      => $user->store_id,
+                'branch_id'     => $branchId,
+                'user_id'       => $user->id,
+                'bill_no'       => $billNo,
+                'created_by'    => $user->id,
             ]);
 
             $subtotal = 0;
@@ -261,9 +275,24 @@ class SalesBillController extends Controller
             ];
         });
 
-        $barcode = base64_encode(
-            DNS1D::getBarcodePNG($bill->bill_no, 'C128', 2.5, 80)
-        );
+        try {
+            $pngBase64 = DNS1D::getBarcodePNG($bill->bill_no, 'C128', 3, 90);
+
+            if (!$pngBase64) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => "Failed to generate barcode for bill_no: {$bill->bill_no}",
+                ], 500);
+            }
+
+            $barcodeDataUri = "data:image/png;base64," . $pngBase64;
+        } catch (\Exception $e) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Barcode generation error.',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
 
         return response()->json([
             'status'   => true,
@@ -293,7 +322,7 @@ class SalesBillController extends Controller
 
             'items' => $items,
 
-            'barcode' => "data:image/png;base64," . $barcode,
+            'barcode' => $barcodeDataUri,
 
             'footer' => "Thank You! Visit Again"
         ]);
