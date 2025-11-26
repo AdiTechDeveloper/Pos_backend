@@ -13,7 +13,7 @@ class ProductController extends Controller
     public function index()
     {
         $storeId = Auth::user()->store_id;
-        $products = Product::where('store_id', $storeId)->with(['brand', 'category', 'gstRate'])->get();
+        $products = Product::where('store_id', $storeId)->with(['store','brand', 'category', 'gstRate'])->get();
 
         return response()->json([
             'status' => true,

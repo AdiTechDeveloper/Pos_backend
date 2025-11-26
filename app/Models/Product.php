@@ -22,7 +22,10 @@ class Product extends Model
         'updated_by',
         'stock'
     ];
-
+    public function store()
+    {
+        return $this->belongsTo(Store::class);
+    }
     // Relationships
     public function brand()
     {

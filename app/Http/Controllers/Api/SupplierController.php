@@ -12,7 +12,7 @@ class SupplierController extends Controller
     public function index()
     {
         $storeId = Auth::user()->store_id;
-        $suppliers = Supplier::where('store_id', $storeId)->get();
+        $suppliers = Supplier::where('store_id', $storeId)->with(['store'])->get();
 
         return response()->json([
             'status' => true,
