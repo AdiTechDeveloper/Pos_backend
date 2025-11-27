@@ -12,7 +12,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->statefulApi();
+        //$middleware->statefulApi();
         $middleware->alias([
             'token.expiry' => \App\Http\Middleware\CheckTokenExpiry::class,
             'check.superadmin' => \App\Http\Middleware\CheckSuperAdmin::class,
