@@ -122,7 +122,7 @@ class ProductController extends Controller
         try {
             $request->validate([
                 'name' => 'required|string',
-                'sku' => 'required|string|unique:products,sku',
+               'sku' => 'required|string|unique:products,sku,' . $id,
                 'brand_id' => 'nullable|integer',
                 'category_id' => 'nullable|integer',
                 'hsn_code' => 'nullable|string',
