@@ -13,7 +13,7 @@ class ProductController extends Controller
     public function index()
     {
         $storeId = Auth::user()->store_id;
-        $products = Product::where('store_id', $storeId)->with(['store','brand', 'category', 'gstRate'])->get();
+        $products = Product::where('store_id', $storeId)->with(['store', 'brand', 'category', 'gstRate'])->get();
 
         return response()->json([
             'status' => true,
@@ -122,7 +122,7 @@ class ProductController extends Controller
         try {
             $request->validate([
                 'name' => 'required|string',
-               'sku' => 'required|string|unique:products,sku,' . $id,
+                'sku' => 'required|string|unique:products,sku,' . $id,
                 'brand_id' => 'nullable|integer',
                 'category_id' => 'nullable|integer',
                 'hsn_code' => 'nullable|string',
