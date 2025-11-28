@@ -31,7 +31,7 @@ class StoreController extends Controller
     public function show($id)
     {
         $user = Auth::user();
-        $store = Store::find($id);
+        $store = Store::with('users')->find($id);
 
         if (!$store) {
             return response()->json([
