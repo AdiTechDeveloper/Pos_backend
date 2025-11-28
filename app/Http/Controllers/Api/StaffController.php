@@ -20,7 +20,7 @@ class StaffController extends Controller
 
             $staff = User::where('store_id', $request->user()->store_id)
                 ->whereIn('role', ['manager', 'cashier'])
-                ->with('branches')
+                ->with('store','branches')
                 ->get();
 
             return response()->json([

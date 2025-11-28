@@ -12,7 +12,7 @@ class CategoryController extends Controller
     public function index()
     {
         $storeId = Auth::user()->store_id;
-        $categories = Category::where('store_id', $storeId)->with('store')->get();
+        $categories = Category::where('store_id', $storeId)->with('parent','store')->get();
 
         return response()->json([
             'status' => true,

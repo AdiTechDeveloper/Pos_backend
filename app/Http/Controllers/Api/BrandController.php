@@ -12,7 +12,7 @@ class BrandController extends Controller
     public function index()
     {
         $storeId = Auth::user()->store_id;
-        $brands = Brand::where('store_id', $storeId)->get();
+        $brands = Brand::where('store_id', $storeId)->with('store')->get();
 
         return response()->json([
             'status' => true,

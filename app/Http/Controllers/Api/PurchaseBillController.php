@@ -25,6 +25,7 @@ class PurchaseBillController extends Controller
             $user = Auth::user();
 
             $query = PurchaseBill::with([
+                'store', 'supplier',
                 'branch:id,name',
                 'supplier:id,name',
                 'lines.product:id,name,sku',

@@ -24,6 +24,11 @@ class PurchaseBill extends Model
         'updated_by'
     ];
 
+     public function store()
+    {
+        return $this->belongsTo(Store::class);
+    }
+
     public function lines()
     {
         return $this->hasMany(PurchaseLine::class);

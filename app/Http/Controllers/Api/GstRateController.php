@@ -12,7 +12,7 @@ class GstRateController extends Controller
     public function index()
     {
         $storeId = Auth::user()->store_id;
-        $gstRates = GstRate::where('store_id', $storeId)->get();
+        $gstRates = GstRate::where('store_id', $storeId)->with('store')->get();
 
         return response()->json([
             'status' => true,
