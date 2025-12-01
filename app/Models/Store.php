@@ -15,6 +15,10 @@ class Store extends Model
         'address',
         'state',
         'phone',
+        'contact_person_name',
+        'gstin',
+        'tagline',
+        'logo'
     ];
 
     public function branches()

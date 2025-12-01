@@ -10,6 +10,7 @@ use App\Models\Store;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 
 class StoreController extends Controller
 {
@@ -72,10 +73,20 @@ class StoreController extends Controller
             'address' => 'nullable|string|max:500',
             'state' => 'required|string|max:20',
             'phone' => 'nullable|string|max:20',
+            'contact_person_name' => 'required|string|max:255',
+            'gstin' => 'required|string|max:20',
+            'tagline' => 'nullable|string|max:255',
+            'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg',
         ]);
 
         try {
             DB::beginTransaction();
+
+            // Upload logo
+            $logoPath = null;
+            if ($request->hasFile('logo')) {
+                $logoPath = $request->file('logo')->store('store_logos', 'public');
+            }
 
             $storeCode = strtoupper(Str::slug(substr($validated['name'], 0, 5))) . rand(100, 999);
 
@@ -85,6 +96,10 @@ class StoreController extends Controller
                 'address' => $validated['address'] ?? null,
                 'state' => $validated['state'],
                 'phone' => $validated['phone'] ?? null,
+                'contact_person_name' => $validated['contact_person_name'],
+                'gstin' => $validated['gstin'],
+                'tagline' => $validated['tagline'] ?? null,
+                'logo' => $logoPath,
             ]);
 
             $adminUsername = strtolower($storeCode . '_admin');
@@ -111,6 +126,10 @@ class StoreController extends Controller
                     'address' => $store->address,
                     'state' => $store->state,
                     'phone' => $store->phone,
+                    'contact_person_name' => $store->contact_person_name,
+                    'gstin' => $store->gstin,
+                    'tagline' => $store->tagline,
+                    'logo_url' => $store->logo ? asset('storage/' . $store->logo) : null,
                 ],
                 'admin_user' => [
                     'id' => $admin->id,
@@ -157,15 +176,57 @@ class StoreController extends Controller
             'address' => 'nullable|string|max:500',
             'state' => 'nullable|string|max:20',
             'phone' => 'nullable|string|max:15',
+            'contact_person_name' => 'nullable|string|max:255',
+            'gstin' => 'nullable|string|max:20',
+            'tagline' => 'nullable|string|max:255',
+            'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg',
         ]);
 
-        $store->update($validated);
+        try {
+            DB::beginTransaction();
 
-        return response()->json([
-            'status' => true,
-            'message' => 'Store updated successfully!',
-            'data' => $store
-        ], 200);
+            // Handle Logo Upload
+            if ($request->hasFile('logo')) {
+
+                // Delete old logo if exists
+                if ($store->logo && Storage::disk('public')->exists($store->logo)) {
+                    Storage::disk('public')->delete($store->logo);
+                }
+
+                // Upload new logo
+                $validated['logo'] = $request->file('logo')->store('store_logos', 'public');
+            }
+
+            // Update store record
+            $store->update($validated);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Store updated successfully!',
+                'data' => [
+                    'id' => $store->id,
+                    'name' => $store->name,
+                    'code' => $store->code,
+                    'address' => $store->address,
+                    'state' => $store->state,
+                    'phone' => $store->phone,
+                    'contact_person_name' => $store->contact_person_name,
+                    'gstin' => $store->gstin,
+                    'tagline' => $store->tagline,
+                    'logo_url' => $store->logo ? asset('storage/' . $store->logo) : null,
+                ]
+            ], 200);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Error updating store.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -189,6 +250,10 @@ class StoreController extends Controller
         }
 
         User::where('store_id', $store->id)->where('role', '!=', 'admin')->update(['store_id' => null]);
+
+        if ($store->logo && Storage::disk('public')->exists($store->logo)) {
+            Storage::disk('public')->delete($store->logo);
+        }
 
         $store->delete();
 

@@ -25,6 +25,7 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'check.superadmin'])->group(f
     Route::get('/stores', [StoreController::class, 'index']);
     Route::get('/stores/{id}', [StoreController::class, 'show']);
     Route::put('/stores/{id}', [StoreController::class, 'update']);
+    Route::post('/stores/{id}', [StoreController::class, 'update']);
     Route::delete('/stores/{id}', [StoreController::class, 'destroy']);
 });
 
