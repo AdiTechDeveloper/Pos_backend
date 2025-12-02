@@ -22,4 +22,11 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
-    })->create();
+    })
+    ->withCommands([
+        App\Console\Commands\DeleteExpiredTokens::class,
+    ])
+    ->withSchedule(function (\Illuminate\Console\Scheduling\Schedule $schedule) {
+        $schedule->command('tokens:cleanup')->daily();
+    })
+    ->create();

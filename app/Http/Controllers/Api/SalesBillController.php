@@ -40,6 +40,94 @@ class SalesBillController extends Controller
         return response()->json(['status' => true, 'data' => $product]);
     }
 
+    public function index()
+    {
+        $user = Auth::user();
+
+        try {
+            $query = SalesBill::with([
+                'lines.product',
+                'lines'
+            ])->orderBy('id', 'desc');
+
+            if ($user->role === 'cashier') {
+                $query->where('user_id', $user->id);
+            } elseif ($user->role === 'manager') {
+                $branchIds = $user->branches->pluck('id')->toArray();
+
+                if (!empty($branchIds)) {
+                    $query->whereIn('branch_id', $branchIds);
+                } else {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'No branch assigned to this manager.'
+                    ], 400);
+                }
+            }
+
+            $bills = $query->get();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Sales bills fetched successfully',
+                'data' => $bills
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function show($id)
+    {
+        $user = Auth::user();
+
+        try {
+            $bill = SalesBill::with([
+                'lines.product',
+                'lines'
+            ])->find($id);
+
+            if (!$bill) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Sales bill not found.'
+                ], 404);
+            }
+
+            if ($user->role === 'cashier') {
+                if ($bill->user_id !== $user->id) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'You are not allowed to view this bill.'
+                    ], 403);
+                }
+            } elseif ($user->role === 'manager') {
+                $branchIds = $user->branches->pluck('id')->toArray();
+
+                if (!in_array($bill->branch_id, $branchIds)) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'You are not allowed to view bills from another branch.'
+                    ], 403);
+                }
+            }
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Sales bill fetched successfully',
+                'data' => $bill
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function store(Request $request)
     {
         $request->validate([

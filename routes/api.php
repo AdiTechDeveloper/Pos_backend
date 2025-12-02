@@ -124,11 +124,13 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
 
 // Salesbill routes
 Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(function () {
+    Route::get('/sales-bills', [SalesBillController::class, 'index']);
+    Route::get('/sales-bill/{id}', [SalesBillController::class, 'show']);
     // Product scan (used by POS)
     Route::post('/sales/scan', [SalesBillController::class, 'scanBarcode']);
     Route::post('/sales-bills', [SalesBillController::class, 'store']);
     // gst report
-    Route::get('/sales-bills', [SalesBillController::class, 'gstReport']);
+    Route::get('/sales-bills/gst-report', [SalesBillController::class, 'gstReport']);
     // Payment method
     Route::post('/sales-bills/pay', [SalesBillController::class, 'pay']);
     // print bill
