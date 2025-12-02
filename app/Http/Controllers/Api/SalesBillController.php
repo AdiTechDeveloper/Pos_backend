@@ -230,6 +230,7 @@ class SalesBillController extends Controller
 
                     // reduce stock
                     $batch->qty -= $consume;
+                    $batch->amount = $batch->qty * $batch->rate;
                     $batch->save();
 
                     $remaining -= $consume;
@@ -309,6 +310,8 @@ class SalesBillController extends Controller
                 $totalGst += $totalLineGst;
                 $totalCogs += $totalLineCogs;
                 $totalProfit += ($taxable - $totalLineCogs);
+
+                $processedProducts[] = $product->id;
             }
 
             // ----------------------------------------------------
@@ -322,6 +325,14 @@ class SalesBillController extends Controller
                 'total_cogs'   => round($totalCogs, 2),
                 'total_profit' => round($totalProfit, 2),
             ]);
+
+            // ----- UPDATE PRODUCTS STOCK AFTER SALE -----
+            $processedProducts = array_unique($processedProducts);
+            foreach ($processedProducts as $productId) {
+                $product = Product::find($productId);
+                $product->stock = Inventory::where('product_id', $productId)->sum('qty');
+                $product->save();
+            }
 
             DB::commit();
 
