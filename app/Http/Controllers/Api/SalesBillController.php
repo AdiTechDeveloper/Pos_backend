@@ -46,6 +46,7 @@ class SalesBillController extends Controller
 
         try {
             $query = SalesBill::with([
+                'store','branch','user',
                 'lines.product',
                 'lines'
             ])->orderBy('id', 'desc');
