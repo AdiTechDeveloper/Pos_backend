@@ -10,10 +10,23 @@ use Milon\Barcode\Facades\DNS1DFacade as DNS1D;
 
 class ProductController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
         $storeId = Auth::user()->store_id;
-        $products = Product::where('store_id', $storeId)->with(['store', 'brand', 'category', 'gstRate'])->get();
+
+        $products = Product::where('store_id', $storeId)
+            ->when($request->category_id, function ($q) use ($request) {
+                $q->where('category_id', $request->category_id);
+            })
+            ->when($request->brand_id, function ($q) use ($request) {
+                $q->where('brand_id', $request->brand_id);
+            })
+            ->when($request->search, function ($q) use ($request) {
+                $q->where('name', 'like', '%' . $request->search . '%');
+            })
+            ->with(['store', 'brand', 'category', 'gstRate'])
+            ->orderBy('name', 'asc')
+            ->get();
 
         return response()->json([
             'status' => true,
