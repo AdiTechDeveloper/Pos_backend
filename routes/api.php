@@ -120,6 +120,8 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     Route::get('/purchase-bill', [PurchaseBillController::class, 'index']);
     Route::get('/purchase-bill/{id}', [PurchaseBillController::class, 'show']);
     Route::post('/purchase-bill', [PurchaseBillController::class, 'store']);
+    Route::put('/purchase-bill/{id}', [PurchaseBillController::class, 'update']);
+    Route::delete('/purchase-bill/{id}', [PurchaseBillController::class, 'destroy']);
 });
 
 // Salesbill routes
