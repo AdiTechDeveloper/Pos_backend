@@ -362,6 +362,8 @@ class SalesBillController extends Controller
             'payments.*.amount' => 'required|numeric|min:0.01',
             'payments.*.transaction_id' => 'nullable|string',
             'payments.*.gateway' => 'nullable|string',
+            'payments.*.cash_received' => 'nullable|numeric|min:0',
+            'payments.*.balance_return' => 'nullable|numeric|min:0',
         ]);
 
         $idempotencyKey = $request->header('Idempotency-Key');
@@ -375,6 +377,7 @@ class SalesBillController extends Controller
 
         $bill = SalesBill::findOrFail($request->sales_bill_id);
 
+        // prevent duplicate
         if ($bill->last_idempotency_key === $idempotencyKey) {
             return response()->json([
                 'status' => true,
@@ -386,41 +389,41 @@ class SalesBillController extends Controller
         DB::beginTransaction();
 
         try {
-            $totalPaidThisTime = 0;
+
+            $totalPaid = 0;
+            $actualCashReceived = collect($request->payments)->sum('cash_received');
 
             foreach ($request->payments as $payment) {
 
                 SalesBillPayment::create([
                     'sales_bill_id'  => $bill->id,
-                    'method'         => $payment['method'],        // cash/card/upi/online
+                    'method'         => $payment['method'],
                     'amount'         => $payment['amount'],
                     'transaction_id' => $payment['transaction_id'] ?? null,
                     'gateway'        => $payment['gateway'] ?? null,
                     'status'         => 'success',
                 ]);
 
-                $totalPaidThisTime += $payment['amount'];
+                $totalPaid += $payment['amount'];
             }
 
-            // Update total paid amount in bill  
-            $bill->cash_received += $totalPaidThisTime;
+            // Store actual customer cash
+            $bill->cash_received = $actualCashReceived;
 
-            // Calculate payment status
-            if ($bill->cash_received >= $bill->total_amount) {
+            // Calculate balance return
+            if ($actualCashReceived > $bill->total_amount) {
+                $bill->balance_return = $actualCashReceived - $bill->total_amount;
+            } else {
+                $bill->balance_return = 0;
+            }
 
-                // FULLY PAID
+            // Payment status
+            if ($totalPaid >= $bill->total_amount) {
                 $bill->payment_status = 'paid';
-                $bill->bill_status    = 'completed';
-
-                // Return balance if extra paid
-                $bill->balance_return = $bill->cash_received - $bill->total_amount;
-            } elseif ($bill->cash_received > 0) {
-
-                // PARTIAL PAID
+                $bill->bill_status = 'completed';
+            } elseif ($totalPaid > 0) {
                 $bill->payment_status = 'partial';
             } else {
-
-                // UNPAID
                 $bill->payment_status = 'unpaid';
             }
 
