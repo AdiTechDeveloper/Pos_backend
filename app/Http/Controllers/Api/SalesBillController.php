@@ -46,7 +46,9 @@ class SalesBillController extends Controller
 
         try {
             $query = SalesBill::with([
-                'store','branch','user',
+                'store',
+                'branch',
+                'user',
                 'lines.product',
                 'lines'
             ])->orderBy('id', 'desc');
@@ -181,6 +183,8 @@ class SalesBillController extends Controller
             $totalCogs = 0;
             $totalProfit = 0;
 
+            $processedProducts = [];
+
             foreach ($request->lines as $line) {
 
                 $product = Product::with('gstRate')->findOrFail($line['product_id']);
@@ -199,12 +203,17 @@ class SalesBillController extends Controller
 
                 $fifoBatches = Inventory::where('product_id', $product->id)
                     ->where('branch_id', $branchId)
-                    ->where('qty', '>', 0)
+                    ->whereColumn('sold_qty', '<', 'qty')
                     ->orderBy('id') // FIFO
                     ->lockForUpdate()
                     ->get();
 
-                if ($fifoBatches->sum('qty') < $line['qty']) {
+                // Check available stock = SUM(qty - sold_qty)
+                $availableStock = $fifoBatches->sum(function ($inv) {
+                    return $inv->qty - $inv->sold_qty;
+                });
+
+                if ($availableStock < $requiredQty) {
                     return response()->json([
                         'status' => false,
                         'message' => "Insufficient stock for {$product->name}"
@@ -219,7 +228,10 @@ class SalesBillController extends Controller
                 foreach ($fifoBatches as $batch) {
                     if ($remaining <= 0) break;
 
-                    $consume = min($batch->qty, $remaining);
+                    $available = $batch->qty - $batch->sold_qty;
+                    if ($available <= 0) continue;
+
+                    $consume = min($available, $remaining);
 
                     // cost = purchase_rate × consumed_qty
                     $totalLineCogs += ($batch->rate * $consume);
@@ -230,8 +242,7 @@ class SalesBillController extends Controller
                     }
 
                     // reduce stock
-                    $batch->qty -= $consume;
-                    $batch->amount = $batch->qty * $batch->rate;
+                    $batch->sold_qty += $consume;
                     $batch->save();
 
                     $remaining -= $consume;
@@ -247,7 +258,7 @@ class SalesBillController extends Controller
                 // ----------------------------------------------------
                 // 3️⃣ GST CALCULATION
                 // ----------------------------------------------------
-                $gstRate = $product->gstRate ? $product->gstRate->rate : 0;
+                $gstRate = $product->gstRate->rate ?? 0;
                 $half = $gstRate / 2;
 
                 $storeState  = $user->store->state;
@@ -331,7 +342,11 @@ class SalesBillController extends Controller
             $processedProducts = array_unique($processedProducts);
             foreach ($processedProducts as $productId) {
                 $product = Product::find($productId);
-                $product->stock = Inventory::where('product_id', $productId)->sum('qty');
+
+                $stock = Inventory::where('product_id', $productId)
+                    ->sum(DB::raw('qty - sold_qty'));
+
+                $product->stock = $stock;
                 $product->save();
             }
 

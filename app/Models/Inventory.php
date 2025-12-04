@@ -12,6 +12,7 @@ class Inventory extends Model
         'purchase_bill_id',
         'purchase_line_id',
         'qty',
+        'sold_qty',
         'free',
         'batch_no',
         'expiry_date',

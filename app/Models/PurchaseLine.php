@@ -41,6 +41,6 @@ class PurchaseLine extends Model
 
     public function inventory()
     {
-        return $this->hasOne(Inventory::class, 'id');
+        return $this->hasOne(Inventory::class, 'purchase_line_id', 'id');
     }
 }
