@@ -133,6 +133,22 @@ class SalesBillController extends Controller
 
     public function store(Request $request)
     {
+        $idempotencyKey = $request->header('Idempotency-Key');
+
+        if (!$idempotencyKey) {
+            return response()->json(['error' => 'Missing Idempotency Key'], 400);
+        }
+
+        // Prevent duplicate bill creation
+        $existing = SalesBill::where('last_idempotency_key_store', $idempotencyKey)->first();
+        if ($existing) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Duplicate Store Request Ignored',
+                'data' => $existing
+            ], 200);
+        }
+
         $request->validate([
             'lines' => 'required|array|min:1',
             'lines.*.product_id' => 'required|integer',
@@ -175,6 +191,7 @@ class SalesBillController extends Controller
                 'bill_status' => 'pending',
                 'payment_status' => 'unpaid',
                 'created_by'    => $user->id,
+                'last_idempotency_key_store' => $idempotencyKey,
             ]);
 
             $subtotal = 0;
@@ -393,7 +410,7 @@ class SalesBillController extends Controller
         $bill = SalesBill::findOrFail($request->sales_bill_id);
 
         // prevent duplicate
-        if ($bill->last_idempotency_key === $idempotencyKey) {
+        if ($bill->last_idempotency_key_payment  === $idempotencyKey) {
             return response()->json([
                 'status' => true,
                 'message' => 'Duplicate request ignored. Returning previous result.',
@@ -442,7 +459,7 @@ class SalesBillController extends Controller
                 $bill->payment_status = 'unpaid';
             }
 
-            $bill->last_idempotency_key = $idempotencyKey;
+            $bill->last_idempotency_key_payment = $idempotencyKey;
             $bill->save();
 
             DB::commit();

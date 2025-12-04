@@ -20,7 +20,8 @@ class SalesBill extends Model
         'cash_received',
         'balance_return',
         'payment_status',
-        'last_idempotency_key',
+        'last_idempotency_key_store',
+        'last_idempotency_key_payment',
         'bill_status',
         'created_by'
     ];
