@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Inventory;
 use App\Models\ItcEntry;
 use App\Models\Product;
-use App\Models\PurchaseBill;
 use App\Models\PurchaseLine;
 use App\Models\PurchaseReturn;
 use App\Models\PurchaseReturnLine;
@@ -16,6 +15,147 @@ use Illuminate\Support\Facades\DB;
 
 class PurchaseReturnController extends Controller
 {
+    public function index()
+    {
+        try {
+            $user = Auth::user();
+
+            // Build base query
+            $query = PurchaseReturn::with([
+                'supplier:id,name',
+                'branch:id,name',
+                'lines.product:id,name,sku',
+                'lines.gstRate:id,rate',
+                'lines' => function ($q) {
+                    $q->select(
+                        'id',
+                        'purchase_return_id',
+                        'product_id',
+                        'gst_rate_id',
+                        'hsn_code',
+                        'qty',
+                        'free',
+                        'rate',
+                        'taxable_value',
+                        'cgst_amount',
+                        'sgst_amount',
+                        'igst_amount',
+                        'line_total'
+                    );
+                }
+            ]);
+
+            // Restrict manager to allowed branches
+            if ($user->role === 'manager') {
+                $managerBranchIds = $user->branches()->pluck('branches.id');
+                $query->whereIn('branch_id', $managerBranchIds);
+            }
+
+            // Restrict admin to own store branches
+            if ($user->role === 'admin') {
+                $query->whereHas('branch', function ($q) use ($user) {
+                    $q->where('store_id', $user->store_id);
+                });
+            }
+
+            $returns = $query
+                ->orderBy('id', 'DESC')
+                ->get();
+
+            return response()->json([
+                'status' => true,
+                'data' => $returns
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function show($id)
+    {
+        try {
+            $user = Auth::user();
+
+            // Load purchase return with relations
+            $purchaseReturn = PurchaseReturn::with([
+                'branch:id,name,store_id',
+                'supplier:id,name',
+                'lines.product:id,name,sku',
+                'lines.gstRate:id,rate'
+            ])->find($id);
+
+            if (! $purchaseReturn) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Purchase return not found'
+                ], 404);
+            }
+
+            // Store id must be taken from the branch relation
+            $returnStoreId = $purchaseReturn->branch->store_id;
+
+            // ----------------------------------------------
+            // ADMIN VALIDATION
+            // ----------------------------------------------
+            if ($user->role === 'admin') {
+                if ($returnStoreId != $user->store_id) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'Unauthorized. Admin can only access purchase returns of their own store.'
+                    ], 403);
+                }
+
+                return response()->json([
+                    'status' => true,
+                    'data' => $purchaseReturn
+                ]);
+            }
+
+            // ----------------------------------------------
+            // MANAGER VALIDATION
+            // ----------------------------------------------
+            if ($user->role === 'manager') {
+
+                // Check store
+                if ($returnStoreId != $user->store_id) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'Unauthorized. Manager can only access purchase returns of their own store.'
+                    ], 403);
+                }
+
+                // Check branch
+                $managerBranchIds = $user->branches()->pluck('branches.id');
+
+                if (! $managerBranchIds->contains($purchaseReturn->branch_id)) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'Unauthorized. Manager can only access returns of assigned branches.'
+                    ], 403);
+                }
+
+                return response()->json([
+                    'status' => true,
+                    'data' => $purchaseReturn
+                ]);
+            }
+
+            // Any other role not allowed
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized.'
+            ], 403);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
     /**
      * Store a new purchase return
      */

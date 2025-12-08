@@ -126,6 +126,8 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
 
 // Purchasebill return routes
 Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(function () {
+    Route::get('/purchase-return', [PurchaseReturnController::class, 'index']);
+    Route::get('/purchase-return/{id}', [PurchaseReturnController::class, 'show']);
     Route::post('/purchase-return', [PurchaseReturnController::class, 'store']);
 });
 

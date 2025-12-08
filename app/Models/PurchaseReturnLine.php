@@ -43,4 +43,9 @@ class PurchaseReturnLine extends Model
     {
         return $this->belongsTo(Product::class);
     }
+
+    public function gstRate()
+    {
+        return $this->belongsTo(GstRate::class, 'gst_rate_id');
+    }
 }
