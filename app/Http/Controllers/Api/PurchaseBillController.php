@@ -559,7 +559,7 @@ class PurchaseBillController extends Controller
                 'total_amount'  => round($totalTaxable + $totalTax, 2),
                 'received'      => 1,
             ]);
-
+            
             // -----------------------------------------------------
             // STEP 6: UPDATE PRODUCT STOCK
             // -----------------------------------------------------
@@ -587,6 +587,7 @@ class PurchaseBillController extends Controller
                 'data'    => $bill->load(['lines.product'])
             ]);
         } catch (\Exception $e) {
+            // dd( $e->getMessage());
             DB::rollBack();
 
             return response()->json([
