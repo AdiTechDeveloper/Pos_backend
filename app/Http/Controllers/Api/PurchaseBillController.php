@@ -597,40 +597,4 @@ class PurchaseBillController extends Controller
             ], 500);
         }
     }
-
-    public function destroy($id)
-    {
-        try {
-            $user = Auth::user();
-
-            if (!in_array($user->role, ['admin', 'manager'])) {
-                return response()->json([
-                    'status' => false,
-                    'message' => 'Unauthorized'
-                ], 403);
-            }
-
-            $purchase_bill = PurchaseBill::where('id', $id)->first();
-
-            if (!$purchase_bill) {
-                return response()->json([
-                    'status' => false,
-                    'message' => 'Purchase Bill not found'
-                ], 404);
-            }
-
-            $purchase_bill->delete();
-
-            return response()->json([
-                'status' => true,
-                'message' => 'Purchase Bill deleted successfully'
-            ], 200);
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => false,
-                'message' => 'An error occurred while deleting the product.',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
 }
