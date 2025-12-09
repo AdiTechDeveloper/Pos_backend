@@ -22,6 +22,7 @@ class PurchaseReturnController extends Controller
 
             // Build base query
             $query = PurchaseReturn::with([
+                'purchaseBill:id,bill_no',
                 'supplier:id,name',
                 'branch:id,name',
                 'lines.product:id,name,sku',
@@ -81,6 +82,7 @@ class PurchaseReturnController extends Controller
 
             // Load purchase return with relations
             $purchaseReturn = PurchaseReturn::with([
+                'purchaseBill:id,bill_no',
                 'branch:id,name,store_id',
                 'supplier:id,name',
                 'lines.product:id,name,sku',
