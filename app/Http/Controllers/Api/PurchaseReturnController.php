@@ -176,10 +176,52 @@ class PurchaseReturnController extends Controller
                 'data' => $purchaseReturn
             ]);
         } catch (\Exception $e) {
+            dd($e->getMessage());
             DB::rollBack();
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+     public function index()
+    {
+        try {
+            $user = Auth::user();
+
+            $query = PurchaseReturn::with([
+                'purchaseBill:id,bill_no',
+                'store',
+                'supplier',
+                'branch:id,name',
+                'supplier:id,name',
+                'lines.product:id,name,sku',
+            ]);
+
+            if ($user->role === 'manager') {
+                $managerBranchIds = $user->branches()->pluck('branches.id');
+                $query->whereIn('branch_id', $managerBranchIds);
+            }
+
+            if ($user->role === 'admin') {
+                $query->whereHas('branch', function ($q) use ($user) {
+                    $q->where('store_id', $user->store_id);
+                });
+            }
+
+            $purchaseReturns = $query
+                ->orderBy('id', 'DESC')
+                ->get();
+
+            return response()->json([
+                'status' => true,
+                'data' => $purchaseReturns
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'error' => $e->getMessage()
             ], 500);
         }
     }
