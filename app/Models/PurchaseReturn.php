@@ -26,10 +26,16 @@ class PurchaseReturn extends Model
         'total_amount' => 'decimal:2',
     ];
 
-    public function purchaseBill()
+     public function purchaseBill()
     {
-        return $this->belongsTo(PurchaseBill::class, 'purchase_bill_id');
-    }
+        return $this->belongsTo(PurchaseBill::class);
+    } 
+
+
+     public function store()
+    {
+        return $this->belongsTo(Store::class);
+    } 
 
     public function lines(): HasMany
     {
