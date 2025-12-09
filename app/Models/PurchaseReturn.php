@@ -18,7 +18,6 @@ class PurchaseReturn extends Model
         'created_by',
     ];
 
-
     protected $casts = [
         'return_date' => 'date',
         'total_taxable' => 'decimal:2',
@@ -30,7 +29,6 @@ class PurchaseReturn extends Model
     {
         return $this->belongsTo(PurchaseBill::class);
     } 
-
 
      public function store()
     {

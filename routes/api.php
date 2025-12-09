@@ -123,12 +123,11 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     Route::get('/purchase-bill/{id}', [PurchaseBillController::class, 'show']);
     Route::post('/purchase-bill', [PurchaseBillController::class, 'store']);
     Route::put('/purchase-bill/{id}', [PurchaseBillController::class, 'update']);
-     Route::get('/purchase-line', [PurchaseLineController::class, 'index']);
+    Route::get('/purchase-line', [PurchaseLineController::class, 'index']);
 });
 
 // Purchasebill return routes
 Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(function () {
-     Route::get('/purchase-return', [PurchaseReturnController::class, 'index']);
     Route::get('/purchase-return', [PurchaseReturnController::class, 'index']);
     Route::get('/purchase-return/{id}', [PurchaseReturnController::class, 'show']);
     Route::post('/purchase-return', [PurchaseReturnController::class, 'store']);

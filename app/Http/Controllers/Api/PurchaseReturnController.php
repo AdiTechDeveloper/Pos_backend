@@ -3,12 +3,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Branch;
+use App\Models\GstRate;
 use App\Models\Inventory;
 use App\Models\ItcEntry;
 use App\Models\Product;
+use App\Models\PurchaseBill;
 use App\Models\PurchaseLine;
 use App\Models\PurchaseReturn;
 use App\Models\PurchaseReturnLine;
+use App\Models\Supplier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -22,7 +26,7 @@ class PurchaseReturnController extends Controller
 
             // Build base query
             $query = PurchaseReturn::with([
-                 'purchaseBill:id,bill_no',
+                'purchaseBill:id,bill_no',
                 'supplier:id,name',
                 'branch:id,name',
                 'lines.product:id,name,sku',
@@ -164,207 +168,188 @@ class PurchaseReturnController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'purchase_bill_id' => ['nullable', 'integer'],
-            'supplier_id' => ['required', 'integer'],
-            'branch_id' => ['required', 'integer'],
-            'return_date' => ['required', 'date'],
-            'lines' => ['required', 'array', 'min:1'],
-            'lines.*.purchase_line_id' => 'required|integer|exists:purchase_lines,id',
-            'lines.*.product_id'       => 'required|integer|exists:products,id',
-            'lines.*.qty'              => 'required|numeric|min:1',
-            'lines.*.free'             => 'required|numeric|min:0',
-            'lines.*.rate'             => 'required|numeric|min:0',
-            'lines.*.gst_rate_id'      => 'required|integer',
-            'lines.*.hsn_code'         => 'required|string',
-            'lines.*.taxable_value'    => 'required|numeric|min:0',
-            'lines.*.cgst'             => 'required|numeric|min:0',
-            'lines.*.sgst'             => 'required|numeric|min:0',
-            'lines.*.igst'             => 'required|numeric|min:0',
+            'purchase_bill_id' => ['required', 'integer', 'exists:purchase_bills,id'],
+            'branch_id'        => ['required', 'integer'],
+            'supplier_id'      => ['required', 'integer'],
+            'return_date'      => ['required', 'date'],
+            'lines'            => ['required', 'array', 'min:1'],
+            'lines.*.purchase_line_id' => ['required', 'integer', 'exists:purchase_lines,id'],
+            'lines.*.product_id'       => ['required', 'integer', 'exists:products,id'],
+            'lines.*.gst_rate_id'      => ['required', 'integer', 'exists:gst_rates,id'],
+            'lines.*.hsn_code'         => ['nullable', 'string'],
+            'lines.*.qty'              => ['required', 'numeric', 'min:0.0001'],
+            'lines.*.free_qty'         => ['nullable', 'numeric', 'min:0'],
+            'lines.*.purchase_rate'    => ['required', 'numeric', 'min:0'],
+            'lines.*.discount_type'    => ['nullable', 'in:percent,fixed'],
+            'lines.*.discount'         => ['nullable', 'numeric', 'min:0'],
         ]);
 
         DB::beginTransaction();
 
         try {
-            $createdBy = Auth::user();
+            $user = Auth::user();
+            $supplier = Supplier::findOrFail($validated['supplier_id']);
+            $branch = Branch::findOrFail($validated['branch_id']);
 
+            // Determine intra-state or inter-state
+            $bill = PurchaseBill::with('lines')->findOrFail($validated['purchase_bill_id']);
+            $originState = $branch->state;
+            $destinationState = $supplier->state;
+            $isIntra = ($originState === $destinationState);
+
+            // Create purchase return
             $purchaseReturn = PurchaseReturn::create([
-                'purchase_bill_id' => $validated['purchase_bill_id'],
-                'supplier_id'      => $validated['supplier_id'],
-                'branch_id'        => $validated['branch_id'],
+                'purchase_bill_id' => $bill->id,
+                'supplier_id'      => $supplier->id,
+                'branch_id'        => $branch->id,
                 'return_date'      => $validated['return_date'],
                 'total_taxable'    => 0,
                 'total_gst'        => 0,
                 'total_amount'     => 0,
-                'created_by'       => $createdBy->id,
+                'created_by'       => $user->id,
             ]);
 
             $totalTaxable = 0;
-            $totalGst = 0;
-            $totalAmount = 0;
+            $totalCgst = 0;
+            $totalSgst = 0;
+            $totalIgst = 0;
 
-            foreach ($validated['lines'] as $line) {
+            foreach ($validated['lines'] as $lineData) {
+                $purchaseLine = PurchaseLine::findOrFail($lineData['purchase_line_id']);
+                $product = Product::findOrFail($lineData['product_id']);
+                $gst = GstRate::findOrFail($lineData['gst_rate_id']);
 
-                $cgstAmount = $line['cgst'];
-                $sgstAmount = $line['sgst'];
-                $igstAmount = $line['igst'];
-                $gstTotal = $cgstAmount + $sgstAmount + $igstAmount;
+                $qty = (float)$lineData['qty'];
+                $freeQty = (float)($lineData['free_qty'] ?? 0);
+                $rate = (float)$lineData['purchase_rate'];
 
-                $lineTotal = $line['taxable_value'] + $gstTotal;
+                $lineDiscountType = $purchaseLine->discount_type;
+                $lineDiscountValue = (float)$purchaseLine->discount;
 
-                $originalLine = PurchaseLine::find($line['purchase_line_id']);
+                $gross = round($qty * $rate, 2);
 
-                $batchNo = $line['batch_no'] ?? $originalLine->batch_no;
-                $expiry  = $originalLine->expiry_date;
+                // ---- Discount per line ----
+                if ($lineDiscountType === 'percent') {
+                    $discountAmount = round($gross * ($lineDiscountValue / 100), 2);
+                } elseif ($lineDiscountType === 'fixed' && $purchaseLine->qty > 0) {
+                    // allocate proportionally to returned quantity
+                    $discountAmount = round(($qty / $purchaseLine->qty) * $lineDiscountValue, 2);
+                } else {
+                    $discountAmount = 0.0;
+                }
 
-                $qty = $line['qty'];
-                $purchaseRate = $line['rate'];
-                $inventoryAmount = -round($qty * $purchaseRate, 2);
+                $taxable = round($gross - $discountAmount, 2);
+                $taxable = max($taxable, 0);
 
-                // Insert into purchase_return_lines
-                $returnLine = PurchaseReturnLine::create([
-                    'purchase_return_id'  => $purchaseReturn->id,
-                    'purchase_bill_line_id' => $line['purchase_line_id'],
-                    'product_id'          => $line['product_id'],
-                    'gst_rate_id'         => $line['gst_rate_id'],
-                    'hsn_code'            => $line['hsn_code'],
-                    'qty'                 => $line['qty'],
-                    'free'                => $line['free'],
-                    'rate'                => $line['rate'],
-                    'taxable_value'       => $line['taxable_value'],
-                    'cgst_amount'         => $cgstAmount,
-                    'sgst_amount'         => $sgstAmount,
-                    'igst_amount'         => $igstAmount,
-                    'line_total'          => $lineTotal
+                // ---- GST ----
+                if ($isIntra) {
+                    $cgst = round(($taxable * ($gst->rate / 2)) / 100, 2);
+                    $sgst = round(($taxable * ($gst->rate / 2)) / 100, 2);
+                    $igst = 0.00;
+                } else {
+                    $cgst = 0.00;
+                    $sgst = 0.00;
+                    $igst = round(($taxable * $gst->rate) / 100, 2);
+                }
+
+                $gstTotal = $cgst + $sgst + $igst;
+                $lineTotal = $taxable + $gstTotal;
+
+                // ---- Create Purchase Return Line ----
+                PurchaseReturnLine::create([
+                    'purchase_return_id'    => $purchaseReturn->id,
+                    'purchase_bill_line_id' => $purchaseLine->id,
+                    'product_id'            => $product->id,
+                    'gst_rate_id'           => $gst->id,
+                    'hsn_code'              => $lineData['hsn_code'] ?? $product->hsn_code,
+                    'qty'                   => $qty,
+                    'free'                  => $freeQty,
+                    'rate'                  => $rate,
+                    'discount'              => $discountAmount,
+                    'taxable_value'         => $taxable,
+                    'cgst_amount'           => $cgst,
+                    'sgst_amount'           => $sgst,
+                    'igst_amount'           => $igst,
+                    'line_total'            => $lineTotal,
                 ]);
 
-                // -----------------------------------------
-                // REVERSE STOCK: two negative inventory rows
-                // -----------------------------------------
-
-                // 1. Negative paid qty
+                // ---- Update Inventory ----
                 Inventory::create([
-                    'product_id'       => $line['product_id'],
-                    'branch_id'        => $validated['branch_id'],
-                    'purchase_bill_id' => $validated['purchase_bill_id'],
-                    'purchase_line_id' => $line['purchase_line_id'],
-                    'qty'              => -abs($line['qty']),
-                    'sold_qty'         => 0,
-                    'free'             => 0,
-                    'batch_no'         => $batchNo,
-                    'expiry_date'      => $expiry,
-                    'rate'             => $line['rate'],
-                    'amount'           => $inventoryAmount,
+                    'product_id'       => $product->id,
+                    'branch_id'        => $branch->id,
+                    'purchase_bill_id' => $bill->id,
+                    'purchase_line_id' => $purchaseLine->id,
+                    'qty'              => -abs($qty),
+                    'free'             => false,
+                    'rate'             => $rate,
+                    'amount'           => -$gross,
+                    'batch_no'         => $purchaseLine->batch_no,
+                    'expiry_date'      => $purchaseLine->expiry_date,
                 ]);
 
-                // 2. Negative free qty (if exists)
-                if ($line['free'] > 0) {
+                if ($freeQty > 0) {
                     Inventory::create([
-                        'product_id'       => $line['product_id'],
-                        'branch_id'        => $validated['branch_id'],
-                        'purchase_bill_id' => $validated['purchase_bill_id'],
-                        'purchase_line_id' => $line['purchase_line_id'],
-                        'qty'              => -abs($line['free']),
-                        'sold_qty'         => 0,
+                        'product_id'       => $product->id,
+                        'branch_id'        => $branch->id,
+                        'purchase_bill_id' => $bill->id,
+                        'purchase_line_id' => $purchaseLine->id,
+                        'qty'              => -abs($freeQty),
                         'free'             => true,
-                        'batch_no'         => $batchNo,
-                        'expiry_date'      => $expiry,
                         'rate'             => 0,
-                        'amount'           => 0
+                        'amount'           => 0,
+                        'batch_no'         => $purchaseLine->batch_no,
+                        'expiry_date'      => $purchaseLine->expiry_date,
                     ]);
                 }
 
-                // -----------------------------------------
-                // ITC ENTRY (negative GST values)
-                // -----------------------------------------
-                ITCEntry::create([
-                    'purchase_bill_id' => $validated['purchase_bill_id'],
-                    'purchase_line_id' => $line['purchase_line_id'],
-                    'product_id'       => $line['product_id'],
-                    'cgst'             => -abs($cgstAmount),
-                    'sgst'             => -abs($sgstAmount),
-                    'igst'             => -abs($igstAmount),
-                    'total_itc'        => -abs($gstTotal),
-                    'created_by'       => $createdBy->id,
+                // ---- ITC ----
+                ItcEntry::create([
+                    'purchase_bill_id' => $bill->id,
+                    'purchase_line_id' => $purchaseLine->id,
+                    'product_id'       => $product->id,
+                    'cgst'             => -$cgst,
+                    'sgst'             => -$sgst,
+                    'igst'             => -$igst,
+                    'total_itc'        => -$gstTotal,
+                    'created_by'       => $user->id,
                 ]);
 
-                // -----------------------------------------
-                // TOTALS
-                // -----------------------------------------
-                $totalTaxable += $line['taxable_value'];
-                $totalGst += $gstTotal;
-                $totalAmount += $lineTotal;
+                $product->decrement('stock', $qty + $freeQty);
+
+                // ---- Update totals ----
+                $totalTaxable += $taxable;
+                $totalCgst += $cgst;
+                $totalSgst += $sgst;
+                $totalIgst += $igst;
             }
 
-            // Decrease stock in products table
-            $product = Product::find($line['product_id']);
+            // ---- Update purchase return totals ----
+            $totalTaxable = round($totalTaxable, 2);
+            $totalCgst = round($totalCgst, 2);
+            $totalSgst = round($totalSgst, 2);
+            $totalIgst = round($totalIgst, 2);
+            $totalGst = $totalCgst + $totalSgst + $totalIgst;
+            $grandTotal = $totalTaxable + $totalGst;
 
-            if ($product) {
-                $totalReduce = $line['qty'] + $line['free'];
-                $product->decrement('stock', $totalReduce);
-            }
-
-            // Update summary totals
             $purchaseReturn->update([
                 'total_taxable' => $totalTaxable,
                 'total_gst'     => $totalGst,
-                'total_amount'  => $totalAmount
+                'total_amount'  => $grandTotal,
             ]);
 
             DB::commit();
 
             return response()->json([
                 'success' => true,
-                'message' => "Purchase return created successfully",
-                'data' => $purchaseReturn
+                'message' => 'Purchase return created successfully',
+                'data'    => $purchaseReturn->load(['lines', 'lines.product']),
             ]);
         } catch (\Exception $e) {
-            dd($e->getMessage());
             DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage()
+                'message' => $e->getMessage(),
             ], 500);
         }
     }
-
-    //  public function index()
-    // {
-    //     try {
-    //         $user = Auth::user();
-
-    //         $query = PurchaseReturn::with([
-    //             'purchaseBill:id,bill_no',
-    //             'store',
-    //             'supplier',
-    //             'branch:id,name',
-    //             'supplier:id,name',
-    //             'lines.product:id,name,sku',
-    //         ]);
-
-    //         if ($user->role === 'manager') {
-    //             $managerBranchIds = $user->branches()->pluck('branches.id');
-    //             $query->whereIn('branch_id', $managerBranchIds);
-    //         }
-
-    //         if ($user->role === 'admin') {
-    //             $query->whereHas('branch', function ($q) use ($user) {
-    //                 $q->where('store_id', $user->store_id);
-    //             });
-    //         }
-
-    //         $purchaseReturns = $query
-    //             ->orderBy('id', 'DESC')
-    //             ->get();
-
-    //         return response()->json([
-    //             'status' => true,
-    //             'data' => $purchaseReturns
-    //         ], 200);
-    //     } catch (\Exception $e) {
-    //         return response()->json([
-    //             'status' => false,
-    //             'error' => $e->getMessage()
-    //         ], 500);
-    //     }
-    // }
 }
