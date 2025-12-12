@@ -41,19 +41,19 @@ class StoreController extends Controller
             ], 404);
         }
 
-        if ($user->role === 'admin' && $user->store_id !== $store->id) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Unauthorized: You can only view your own store.'
-            ], 403);
-        }
+        // if ($user->role === 'admin' && $user->store_id !== $store->id) {
+        //     return response()->json([
+        //         'status' => false,
+        //         'message' => 'Unauthorized: You can only view your own store.'
+        //     ], 403);
+        // }
 
-        if (!in_array($user->role, ['admin', 'superadmin'])) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Access denied.'
-            ], 403);
-        }
+        // if (!in_array($user->role, ['admin', 'superadmin'])) {
+        //     return response()->json([
+        //         'status' => false,
+        //         'message' => 'Access denied.'
+        //     ], 403);
+        // }
 
         return response()->json([
             'status' => true,
