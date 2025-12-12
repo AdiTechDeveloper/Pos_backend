@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Crypt;
 
 class StaffController extends Controller
 {
@@ -22,7 +23,7 @@ class StaffController extends Controller
                 ->whereIn('role', ['manager', 'cashier'])
                 ->with('store','branches')
                 ->get();
-
+                
             return response()->json([
                 'status' => true,
                 'data' => $staff
@@ -153,7 +154,7 @@ class StaffController extends Controller
 
             $validator = Validator::make($request->all(), [
                 'role' => 'required|in:manager,cashier',
-                'pin' => 'nullable|required_if:role,cashier|digits:4',
+                // 'pin' => 'nullable|required_if:role,cashier|digits:4',
                 'branch_ids' => 'required|array|min:1',
                 'branch_ids.*' => 'exists:branches,id'
             ]);
@@ -167,8 +168,8 @@ class StaffController extends Controller
             $staff->role = $data['role'];
             $staff->updated_by = $authUser->id;
 
-            if ($data['role'] === 'cashier' && isset($data['pin'])) {
-                $staff->pin_hash = Hash::make($data['pin']);
+            if ($data['role'] === 'cashier') {
+                $staff->pin_hash = $staff->pin_hash;
                 $staff->password = null;
             } elseif ($data['role'] !== 'cashier') {
                 $staff->pin_hash = null;
