@@ -21,11 +21,11 @@ Route::post('/login', [AuthController::class, 'login']);
 
 // store registration route
 Route::post('/stores', [StoreController::class, 'store']);
+Route::get('/stores/{id}', [StoreController::class, 'show']);
 
 // stores routes for superadmin users
 Route::middleware(['auth:sanctum', 'token.expiry', 'check.superadmin'])->group(function () {
     Route::get('/stores', [StoreController::class, 'index']);
-    Route::get('/stores/{id}', [StoreController::class, 'show']);
     Route::put('/stores/{id}', [StoreController::class, 'update']);
     Route::post('/stores/{id}', [StoreController::class, 'update']);
     Route::delete('/stores/{id}', [StoreController::class, 'destroy']);
