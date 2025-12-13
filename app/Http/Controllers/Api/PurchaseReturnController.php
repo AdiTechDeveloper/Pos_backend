@@ -23,7 +23,6 @@ class PurchaseReturnController extends Controller
     {
         try {
             $user = Auth::user();
-
             // Build base query
             $query = PurchaseReturn::with([
                 'purchaseBill:id,bill_no',
