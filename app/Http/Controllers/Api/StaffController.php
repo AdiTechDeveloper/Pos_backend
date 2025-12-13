@@ -73,6 +73,7 @@ class StaffController extends Controller
     public function store(Request $request)
     {
         try {
+              $user = Auth::user();
             if (! in_array($request->user()->role, ['admin', 'manager'])) {
                 return response()->json(['message' => 'Forbidden'], 403);
             }
@@ -88,6 +89,21 @@ class StaffController extends Controller
 
             if ($validator->fails()) {
                 return response()->json(['status' => false, 'errors' => $validator->errors()], 422);
+            }
+               if ($request->role === 'cashier') {
+                $existingCashiers = User::where('store_id', $user->store_id)
+                    ->where('role', 'cashier')
+                    ->whereNotNull('pin_hash')
+                    ->get();
+
+                foreach ($existingCashiers as $cashier) {
+                    if (Hash::check($request->pin, $cashier->pin_hash)) {
+                        return response()->json([
+                            'status' => false,
+                            'message' => 'PIN already in use. Please choose a different PIN.'
+                        ], 422);
+                    }
+                }
             }
 
             $data = $validator->validated();
@@ -168,6 +184,7 @@ class StaffController extends Controller
             $staff->updated_by = $authUser->id;
 
             if ($data['role'] === 'cashier') {
+        
                 $staff->pin_hash = $staff->pin_hash;
                 $staff->password = null;
             } elseif ($data['role'] !== 'cashier') {

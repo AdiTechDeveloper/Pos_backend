@@ -395,15 +395,6 @@ class PurchaseBillController extends Controller
             $user = Auth::user();
 
             // -----------------------------------------------------
-            // STEP 1: Prevent update if any sold quantity exists
-            // -----------------------------------------------------
-            // foreach ($bill->lines as $oldLine) {
-            //     if (Inventory::where('purchase_line_id', $oldLine->id)->where('sold_qty', '>', 0)->exists()) {
-            //         throw new Exception("Cannot edit purchase bill. Items already sold.");
-            //     }
-            // }
-
-            // -----------------------------------------------------
             // STEP 2: Delete only unsold inventory
             // -----------------------------------------------------
             foreach ($bill->lines as $oldLine) {
