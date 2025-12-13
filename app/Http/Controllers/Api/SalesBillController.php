@@ -559,8 +559,7 @@ class SalesBillController extends Controller
             'data'   => $response
         ]);
     }
-
-
+    
     public function gstReport()
     {
         try {
