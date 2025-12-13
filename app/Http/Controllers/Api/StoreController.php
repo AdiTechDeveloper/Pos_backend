@@ -101,6 +101,7 @@ class StoreController extends Controller
                 'tagline' => $validated['tagline'] ?? null,
                 'logo' => $logoPath,
             ]);
+            // dd($store);
 
             $adminUsername = strtolower($storeCode . '_admin');
             $adminPassword = '123456';
@@ -139,6 +140,7 @@ class StoreController extends Controller
                 ]
             ], 201);
         } catch (\Exception $e) {
+            dd($e->getMessage());
             return response()->json(['message' => 'An error occurred while creating the store.', $e->getMessage()], 500);
         }
     }
