@@ -113,7 +113,6 @@ class StoreController extends Controller
                 'password' => Hash::make($adminPassword),
                 'role' => 'admin',
                 'is_active' => true,
-                // 'created_by' => $user->id,
             ]);
 
             DB::commit();
@@ -140,7 +139,6 @@ class StoreController extends Controller
                 ]
             ], 201);
         } catch (\Exception $e) {
-            dd($e->getMessage());
             return response()->json(['message' => 'An error occurred while creating the store.', $e->getMessage()], 500);
         }
     }
