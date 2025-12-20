@@ -25,8 +25,7 @@ class PurchaseLineController extends Controller
             $user = Auth::user();
 
             $purchaseLines = PurchaseLine::get();
-                
-
+            
             return response()->json([
                 'status' => true,
                 'data' => $purchaseLines

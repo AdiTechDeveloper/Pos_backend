@@ -75,14 +75,14 @@ class ProductController extends Controller
         try {
             $request->validate([
                 'name' => 'required|string',
-                'sku' => 'required|string|unique:products,sku',
-                'brand_id' => 'nullable|integer',
-                'category_id' => 'nullable|integer',
-                'hsn_code' => 'nullable|string',
-                'gst_rate_id' => 'nullable|numeric',
-                'mrp' => 'nullable|numeric',
-                'selling_price' => 'nullable|numeric',
-                'cost_price' => 'nullable|numeric',
+                // 'sku' => 'required|string|unique:products,sku',
+                // 'brand_id' => 'nullable|integer',
+                // 'category_id' => 'nullable|integer',
+                // 'hsn_code' => 'nullable|string',
+                // 'gst_rate_id' => 'nullable|numeric',
+                // 'mrp' => 'nullable|numeric',
+                // 'selling_price' => 'nullable|numeric',
+                // 'cost_price' => 'nullable|numeric',
             ]);
 
             $user = Auth::user();
@@ -135,14 +135,14 @@ class ProductController extends Controller
         try {
             $request->validate([
                 'name' => 'required|string',
-                'sku' => 'required|string|unique:products,sku,' . $id,
-                'brand_id' => 'nullable|integer',
-                'category_id' => 'nullable|integer',
-                'hsn_code' => 'nullable|string',
-                'gst_rate_id' => 'nullable|numeric',
-                'mrp' => 'nullable|numeric',
-                'selling_price' => 'nullable|numeric',
-                'cost_price' => 'nullable|numeric',
+                // 'sku' => 'required|string|unique:products,sku,' . $id,
+                // 'brand_id' => 'nullable|integer',
+                // 'category_id' => 'nullable|integer',
+                // 'hsn_code' => 'nullable|string',
+                // 'gst_rate_id' => 'nullable|numeric',
+                // 'mrp' => 'nullable|numeric',
+                // 'selling_price' => 'nullable|numeric',
+                // 'cost_price' => 'nullable|numeric',
             ]);
 
             $user = Auth::user();

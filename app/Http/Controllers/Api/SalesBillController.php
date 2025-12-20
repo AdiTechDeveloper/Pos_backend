@@ -117,7 +117,6 @@ class SalesBillController extends Controller
                     ], 403);
                 }
             }
-
             return response()->json([
                 'status' => true,
                 'message' => 'Sales bill fetched successfully',

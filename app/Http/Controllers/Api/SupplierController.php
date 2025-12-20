@@ -43,10 +43,10 @@ class SupplierController extends Controller
         try {
             $request->validate([
                 'name' => 'required|string|max:255',
-                'gstin' => 'required|string|max:15',
-                'contact' => 'required|string|max:20',
-                'address' => 'required|string',
-                'state' => 'required|string|max:20'
+                // 'gstin' => 'required|string|max:15',
+                // 'contact' => 'required|string|max:20',
+                // 'address' => 'required|string',
+                // 'state' => 'required|string|max:20'
             ]);
 
             $user = Auth::user();
@@ -89,10 +89,10 @@ class SupplierController extends Controller
         try {
             $request->validate([
                 'name' => 'required|string|max:255',
-                'gstin' => 'required|string|max:15',
-                'contact' => 'required|string|max:20',
-                'address' => 'required|string',
-                'state' => 'required|string|max:20',
+                // 'gstin' => 'required|string|max:15',
+                // 'contact' => 'required|string|max:20',
+                // 'address' => 'required|string',
+                // 'state' => 'required|string|max:20',
             ]);
 
             $user = Auth::user();
