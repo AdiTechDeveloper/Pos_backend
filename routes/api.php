@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PurchaseBillController;
 use App\Http\Controllers\Api\PurchaseLineController;
 use App\Http\Controllers\Api\PurchaseReturnController;
+use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SalesBillController;
 use App\Http\Controllers\Api\StoreController;
 use App\Http\Controllers\Api\StaffController;
@@ -146,4 +147,10 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     // Payment method
     Route::post('/sales-bills/pay', [SalesBillController::class, 'pay']);
     Route::post('/sales-bill/print-data', [SalesBillController::class, 'getPrintData']);
+});
+
+// Report routes
+Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(function () {
+    Route::get('/reports/profit-loss', [ReportController::class, 'profitLoss']);
+    Route::get('/reports/top-selling-products', [ReportController::class, 'topSellingProducts']);
 });
