@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\SalesBillLine;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -30,7 +31,7 @@ class ReportController extends Controller
         // Role-based branch filtering
         if ($user->role === 'manager') {
 
-            $managerBranchIds = $user->managerBranches()
+            $managerBranchIds = $user->branches()
                 ->pluck('branch_id')
                 ->toArray();
 
@@ -72,8 +73,9 @@ class ReportController extends Controller
     public function topSellingProducts(Request $request)
     {
         $user = Auth::user();
+        $branchIds = $user->branches->pluck('id')->toArray();
 
-        $query = DB::table('sales_bill_lines')
+        $query = SalesBillLine::with('product')
             ->select(
                 'product_id',
                 DB::raw('SUM(qty) as total_qty'),
@@ -83,7 +85,7 @@ class ReportController extends Controller
 
         // Manager: only their branch
         if ($user->role === 'manager') {
-            $query->where('branch_id', $user->branch_id);
+            $query->where('branch_id', $branchIds);
         }
 
         // Admin: optional branch filter

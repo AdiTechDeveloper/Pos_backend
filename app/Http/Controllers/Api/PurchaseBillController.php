@@ -549,7 +549,7 @@ class PurchaseBillController extends Controller
                 'total_amount'  => round($totalTaxable + $totalTax, 2),
                 'received'      => 1,
             ]);
-            
+
             // -----------------------------------------------------
             // STEP 6: UPDATE PRODUCT STOCK
             // -----------------------------------------------------
@@ -584,44 +584,6 @@ class PurchaseBillController extends Controller
                 'message' => 'Error updating purchase bill',
                 'error'   => $e->getMessage(),
                 'line'    => $e->getLine()
-            ], 500);
-        }
-    }
-
-      public function destroy($id)
-    {
-        try {
-            $user = Auth::user();
-
-            if (!in_array($user->role, ['admin', 'manager'])) {
-                return response()->json([
-                    'status' => false,
-                    'message' => 'Unauthorized'
-                ], 403);
-            }
-
-            $storeId = Auth::user()->store_id;
-
-            $purchaseBills = PurchaseBill::where('store_id', $storeId)->where('id', $id)->first();
-
-            if (!$purchaseBills) {
-                return response()->json([
-                    'status' => false,
-                    'message' => 'Purchase Bill not found'
-                ], 404);
-            }
-
-            $purchaseBills->delete();
-
-            return response()->json([
-                'status' => true,
-                'message' => 'Purchase Bill deleted successfully'
-            ], 200);
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => false,
-                'message' => 'An error occurred while deleting the brand.',
-                'error' => $e->getMessage()
             ], 500);
         }
     }
