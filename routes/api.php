@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SalesBillController;
 use App\Http\Controllers\Api\StoreController;
 use App\Http\Controllers\Api\StaffController;
+use App\Http\Controllers\Api\StockExpiryController;
 use App\Http\Controllers\Api\SupplierController;
 use Illuminate\Support\Facades\Route;
 
@@ -152,4 +153,9 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
 Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(function () {
     Route::get('/reports/profit-loss', [ReportController::class, 'profitLoss']);
     Route::get('/reports/top-selling-products', [ReportController::class, 'topSellingProducts']);
+});
+
+// Stock Expiry Alerts routes
+Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(function () {
+    Route::get('/stock-expiry-alerts', [StockExpiryController::class, 'stockExpiryAlerts']);
 });
