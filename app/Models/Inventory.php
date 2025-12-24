@@ -13,6 +13,8 @@ class Inventory extends Model
         'purchase_line_id',
         'qty',
         'sold_qty',
+        'expired_qty',
+        'expired_at',
         'free',
         'batch_no',
         'expiry_date',
@@ -20,6 +22,12 @@ class Inventory extends Model
         'amount'
     ];
 
+    protected $appends = ['available_qty'];
+
+    public function getAvailableQtyAttribute()
+    {
+        return $this->qty - $this->sold_qty - $this->expired_qty;
+    }
 
     public function product()
     {

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Inventory;
 use App\Models\StockExpiryAlert;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -30,14 +31,27 @@ class StockExpiryController extends Controller
 
         $alerts = $query->get();
 
+        $expiredQty = Inventory::query()
+            ->whereIn('product_id', $alerts->pluck('product_id'))
+            ->get()
+            ->groupBy(function ($item) {
+                return $item->product_id . '_' . $item->batch_no;
+            })
+            ->map(function ($items) {
+                return $items->sum(function ($item) {
+                    return ($item->qty - $item->sold_qty ?? 0);
+                });
+            });
+
         return response()->json([
             'total' => $alerts->count(),
-            'alerts' => $alerts->map(function ($a) {
+            'alerts' => $alerts->map(function ($a) use ($expiredQty) {
+                $key = $a->product_id . '_' . ($a->purchaseLine->batch_no ?? '');
                 return [
                     'id' => $a->id,
                     'product_name' => $a->product->name ?? '-',
                     'batch_no' => $a->purchaseLine->batch_no ?? '-',
-                    'qty' => $a->purchaseLine->qty ?? 0,
+                    'qty' => $expiredQty->get($key, 0),
                     'expiry_date' => $a->expiry_date,
                     'days_left' => $a->days_left,
                     'severity' => $a->severity,
