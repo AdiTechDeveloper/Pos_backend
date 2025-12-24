@@ -69,9 +69,20 @@ class StoreController extends Controller
 
             // Upload logo
             $logoPath = null;
-            if ($request->hasFile('logo')) {
-                $logoPath = $request->file('logo')->store('store_logos', 'public');
-            }
+           
+
+    // 🔹 Delete old logo
+      if ($request->hasFile('logo')) {
+           if (!empty($store->logo)) {
+        if (file_exists($store->logo)) {
+            unlink($store->logo);
+        }
+    }
+            $file = $request->file('logo');
+                $filename = time().'_'.$file->getClientOriginalName();
+                $file->move('storage/store_logos/', $filename);
+                  $logoPath = 'store_logos/'.$filename;
+        }
 
             $storeCode = strtoupper(Str::slug(substr($validated['name'], 0, 5))) . rand(100, 999);
 
@@ -171,15 +182,21 @@ class StoreController extends Controller
             DB::beginTransaction();
 
             // Handle Logo Upload
-            if ($request->hasFile('logo')) {
+            // if ($request->hasFile('logo')) {
 
-                // Delete old logo if exists
-                if ($store->logo && Storage::disk('public')->exists($store->logo)) {
-                    Storage::disk('public')->delete($store->logo);
-                }
+            //     // Delete old logo if exists
+            //     if ($store->logo && Storage::disk('public')->exists($store->logo)) {
+            //         Storage::disk('public')->delete($store->logo);
+            //     }
 
-                // Upload new logo
-                $validated['logo'] = $request->file('logo')->store('store_logos', 'public');
+            //     // Upload new logo
+            //     $validated['logo'] = $request->file('logo')->store('store_logos', 'public');
+            // }
+             if ($request->hasFile('logo')) {
+                $file = $request->file('logo');
+                $filename = time().'_'.$file->getClientOriginalName();
+                $file->move('storage/store_logos/', $filename);
+                $validated['logo'] = 'store_logos/'.$filename;
             }
 
             // Update store record
