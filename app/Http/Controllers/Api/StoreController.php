@@ -182,16 +182,7 @@ class StoreController extends Controller
             DB::beginTransaction();
 
             // Handle Logo Upload
-            // if ($request->hasFile('logo')) {
-
-            //     // Delete old logo if exists
-            //     if ($store->logo && Storage::disk('public')->exists($store->logo)) {
-            //         Storage::disk('public')->delete($store->logo);
-            //     }
-
-            //     // Upload new logo
-            //     $validated['logo'] = $request->file('logo')->store('store_logos', 'public');
-            // }
+         
              if ($request->hasFile('logo')) {
                 $file = $request->file('logo');
                 $filename = time().'_'.$file->getClientOriginalName();
