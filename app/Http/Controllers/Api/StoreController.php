@@ -52,7 +52,6 @@ class StoreController extends Controller
      */
     public function store(Request $request)
     {
-
         $validated = $request->validate([
             'name' => 'required|string|max:255|unique:stores,name',
             'address' => 'nullable|string|max:500',
@@ -63,25 +62,22 @@ class StoreController extends Controller
             'tagline' => 'nullable|string|max:255',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg',
         ]);
-
         try {
             DB::beginTransaction();
-
             // Upload logo
             $logoPath = null;
-           
 
     // 🔹 Delete old logo
-      if ($request->hasFile('logo')) {
-           if (!empty($store->logo)) {
-        if (file_exists($store->logo)) {
-            unlink($store->logo);
-        }
-    }
+            if ($request->hasFile('logo')) {
+                if (!empty($store->logo)) {
+                if (file_exists($store->logo)) {
+                    unlink($store->logo);
+                }
+            }
             $file = $request->file('logo');
-                $filename = time().'_'.$file->getClientOriginalName();
-                $file->move('storage/store_logos/', $filename);
-                  $logoPath = 'store_logos/'.$filename;
+            $filename = time().'_'.$file->getClientOriginalName();
+            $file->move('storage/store_logos/', $filename);
+            $logoPath = 'store_logos/'.$filename;
         }
 
             $storeCode = strtoupper(Str::slug(substr($validated['name'], 0, 5))) . rand(100, 999);
@@ -97,7 +93,6 @@ class StoreController extends Controller
                 'tagline' => $validated['tagline'] ?? null,
                 'logo' => $logoPath,
             ]);
-            // dd($store);
 
             $adminUsername = strtolower($storeCode . '_admin');
             $adminPassword = '123456';
