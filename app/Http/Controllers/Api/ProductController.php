@@ -255,6 +255,8 @@ class ProductController extends Controller
 
             return response($png, 200)
                 ->header('Content-Type', 'image/png')
+                ->header('X-Product-Name', $product->name)
+                ->header('X-Price', $product->selling_price)
                 ->header('Content-Length', strlen($png));
         } catch (\Exception $e) {
             return response()->json([
