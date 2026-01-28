@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class SalesBillLine extends Model
 {
@@ -40,5 +41,10 @@ class SalesBillLine extends Model
     public function gstRate()
     {
         return $this->belongsTo(GstRate::class);
+    }
+
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
     }
 }

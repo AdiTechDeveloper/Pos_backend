@@ -61,24 +61,24 @@ class StoreController extends Controller
             'gstin' => 'required|string|max:20',
             'tagline' => 'nullable|string|max:255',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg',
+            'username' => 'required|string|max:50|unique:users,username',
+            'password' => 'required|string|min:6|confirmed',
         ]);
         try {
             DB::beginTransaction();
-            // Upload logo
             $logoPath = null;
 
-    // 🔹 Delete old logo
             if ($request->hasFile('logo')) {
-                if (!empty($store->logo)) {
-                if (file_exists($store->logo)) {
-                    unlink($store->logo);
-                }
+                // if (!empty($store->logo)) {
+                //     if (file_exists($store->logo)) {
+                //         unlink($store->logo);
+                //     }
+                // }
+                $file = $request->file('logo');
+                $filename = time() . '_' . $file->getClientOriginalName();
+                $file->move('storage/store_logos/', $filename);
+                $logoPath = 'store_logos/' . $filename;
             }
-            $file = $request->file('logo');
-            $filename = time().'_'.$file->getClientOriginalName();
-            $file->move('storage/store_logos/', $filename);
-            $logoPath = 'store_logos/'.$filename;
-        }
 
             $storeCode = strtoupper(Str::slug(substr($validated['name'], 0, 5))) . rand(100, 999);
 
@@ -94,14 +94,14 @@ class StoreController extends Controller
                 'logo' => $logoPath,
             ]);
 
-            $adminUsername = strtolower($storeCode . '_admin');
-            $adminPassword = '123456';
+            // $adminUsername = strtolower($storeCode . '_admin');
+            // $adminPassword = '123456';
 
             $admin = User::create([
                 'store_id' => $store->id,
                 'name' => $validated['name'] . ' Admin',
-                'username' => $adminUsername,
-                'password' => Hash::make($adminPassword),
+                'username' => $validated['username'],
+                'password' => Hash::make($validated['password']),
                 'role' => 'admin',
                 'is_active' => true,
             ]);
@@ -130,7 +130,11 @@ class StoreController extends Controller
                 ]
             ], 201);
         } catch (\Exception $e) {
-            return response()->json(['message' => 'An error occurred while creating the store.', $e->getMessage()], 500);
+            DB::rollBack();
+            return response()->json([
+                'message' => 'An error occurred while creating the store.',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
@@ -177,12 +181,12 @@ class StoreController extends Controller
             DB::beginTransaction();
 
             // Handle Logo Upload
-         
-             if ($request->hasFile('logo')) {
+
+            if ($request->hasFile('logo')) {
                 $file = $request->file('logo');
-                $filename = time().'_'.$file->getClientOriginalName();
+                $filename = time() . '_' . $file->getClientOriginalName();
                 $file->move('storage/store_logos/', $filename);
-                $validated['logo'] = 'store_logos/'.$filename;
+                $validated['logo'] = 'store_logos/' . $filename;
             }
 
             // Update store record

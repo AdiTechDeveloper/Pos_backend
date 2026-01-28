@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Branch;
 use App\Models\SalesBillLine;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -73,24 +74,35 @@ class ReportController extends Controller
     public function topSellingProducts(Request $request)
     {
         $user = Auth::user();
-        $branchIds = $user->branches->pluck('id')->toArray();
 
-        $query = SalesBillLine::with('product')
+        if (!in_array($user->role, ['admin', 'manager'])) {
+            abort(403, 'Unauthorized');
+        }
+
+        $query = SalesBillLine::query()
             ->select(
                 'product_id',
                 DB::raw('SUM(qty) as total_qty'),
                 DB::raw('SUM(amount) as total_sales'),
                 DB::raw('SUM(profit) as total_profit')
-            );
+            )
+            ->with('product:id,name,sku');
 
-        // Manager: only their branch
-        if ($user->role === 'manager') {
-            $query->where('branch_id', $branchIds);
+        // ADMIN → only own store
+        if ($user->role === 'admin') {
+            $query->whereHas('branch', function ($q) use ($user) {
+                $q->where('store_id', $user->store_id);
+            });
+
+            if ($request->filled('branch_id')) {
+                $query->where('branch_id', $request->branch_id);
+            }
         }
 
-        // Admin: optional branch filter
-        if ($user->role === 'admin' && $request->branch_id) {
-            $query->where('branch_id', $request->branch_id);
+        // MANAGER → only assigned branches
+        if ($user->role === 'manager') {
+            $branchIds = $user->branches()->pluck('branches.id');
+            $query->whereIn('branch_id', $branchIds);
         }
 
         return $query
