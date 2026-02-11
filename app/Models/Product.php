@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class Product extends Model
 {
@@ -20,13 +21,15 @@ class Product extends Model
         'cost_price',
         'created_by',
         'updated_by',
-        'stock'
+        'stock',
+        'gst_inclusive',
     ];
+
     public function store()
     {
         return $this->belongsTo(Store::class);
     }
-    // Relationships
+
     public function brand()
     {
         return $this->belongsTo(Brand::class);
@@ -45,5 +48,13 @@ class Product extends Model
     public function inventories()
     {
         return $this->hasMany(Inventory::class, 'product_id', 'id');
+    }
+
+    /**
+     * Get the total available stock by summing inventory batches.
+     */
+    public function getTotalStockAttribute()
+    {
+        return $this->inventories()->sum(DB::raw('qty - sold_qty'));
     }
 }

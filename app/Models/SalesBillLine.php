@@ -14,6 +14,7 @@ class SalesBillLine extends Model
         'inventory_id',
         'qty',
         'rate',
+        'taxable_amount',
         'amount',
         'cogs',
         'profit',

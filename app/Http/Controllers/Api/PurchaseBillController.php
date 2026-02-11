@@ -16,6 +16,7 @@ use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class PurchaseBillController extends Controller
 {
@@ -138,23 +139,22 @@ class PurchaseBillController extends Controller
             'bill_no'          => [
                 'required',
                 'string',
-                \Illuminate\Validation\Rule::unique('purchase_bills')->where(function ($query) use ($request) {
-                    return $query->where('supplier_id', $request->supplier_id);
-                }),
+                \Illuminate\Validation\Rule::unique('purchase_bills')->where(fn($q) => $q->where('supplier_id', $request->supplier_id)),
             ],
-            'bill_date'        => 'required|date',
-
-            'lines'                    => 'required|array|min:1',
-            'lines.*.product_id'       => 'required|integer',
-            'lines.*.qty'              => 'required|numeric|min:0.0001',
-            'lines.*.free_qty'         => 'nullable|numeric|min:0',
-            'lines.*.purchase_rate'    => 'required|numeric|min:0',
-            'lines.*.discount_type'    => 'nullable|in:percent,fixed',
-            'lines.*.hsn_code'         => 'nullable|string',
-            'lines.*.discount'         => 'nullable|numeric|min:0',
-            'lines.*.gst_rate_id'      => 'required|integer',
-            'lines.*.batch_no'         => 'nullable|string',
-            'lines.*.expiry_date'      => 'nullable|date',
+            'bill_date'              => 'required|date',
+            'lines'                  => 'required|array|min:1',
+            'lines.*.product_id'     => 'required|integer',
+            'lines.*.qty'            => 'required|numeric|min:0.0001',
+            'lines.*.free_qty'       => 'nullable|numeric|min:0',
+            'lines.*.purchase_rate'  => 'required|numeric|min:0',
+            'lines.*.mrp'            => 'required|numeric|min:0', // Added for Batch Pricing
+            'lines.*.selling_price'  => 'required|numeric|min:0', // Added for Batch Pricing
+            'lines.*.gst_rate_id'    => 'required|integer',
+            'lines.*.batch_no'       => 'nullable|string',
+            'lines.*.expiry_date'    => 'nullable|date',
+            'lines.*.discount'       => 'nullable|numeric|min:0',
+            'lines.*.discount_type'  => 'nullable|string|in:percent,fixed',
+            'lines.*.is_opening'     => 'sometimes|in:0,1',
         ]);
 
         try {
@@ -162,20 +162,13 @@ class PurchaseBillController extends Controller
 
             $user = Auth::user();
             $storeId = $user->store_id;
-
             $supplier = Supplier::findOrFail($validated['supplier_id']);
 
-            // origin state: for admin use store state, otherwise branch state
-            if ($user->role === 'admin') {
-                $originState = Store::findOrFail($storeId)->state;
-            } else {
-                $originState = Branch::findOrFail($validated['branch_id'])->state;
-            }
+            // State logic for GST
+            $branch = Branch::findOrFail($validated['branch_id']);
+            $originState = ($user->role === 'admin') ? Store::findOrFail($storeId)->state : $branch->state;
+            $isIntra = ($originState === $supplier->state);
 
-            $destinationState = $supplier->state;
-            $isIntra = ($originState === $destinationState);
-
-            // Create purchase bill
             $bill = PurchaseBill::create([
                 'store_id'     => $storeId,
                 'branch_id'    => $validated['branch_id'],
@@ -185,136 +178,140 @@ class PurchaseBillController extends Controller
                 'created_by'   => $user->id,
             ]);
 
-            $totalTaxable = 0.0;
-            $totalCgst = 0.0;
-            $totalSgst = 0.0;
-            $totalIgst = 0.0;
+            $totals = ['taxable' => 0, 'cgst' => 0, 'sgst' => 0, 'igst' => 0];
 
             foreach ($validated['lines'] as $lineData) {
-
                 $product = Product::findOrFail($lineData['product_id']);
                 $gst = GstRate::findOrFail($lineData['gst_rate_id']);
 
-                // quantities and rates
-                $qty = (float) $lineData['qty'];
-                $freeQty = isset($lineData['free_qty']) ? (float)$lineData['free_qty'] : 0.0;
-                $purchaseRate = (float) $lineData['purchase_rate'];
+                // Calculations
+                $qty = (float)$lineData['qty'];
+                $freeQty = (float)($lineData['free_qty'] ?? 0);
+                $purchaseRate = (float)$lineData['purchase_rate'];
+                // $taxable = round(($qty * $purchaseRate) - ($lineData['discount'] ?? 0), 2);
+
                 $discount = isset($lineData['discount']) ? (float)$lineData['discount'] : 0.0;
                 $discountType = $lineData['discount_type'] ?? null;
 
-                // HSN fallback
-                $hsn = $lineData['hsn_code'] ?? $product->hsn_code;
-
-                // ----- GROSS and DISCOUNT -----
                 $grossValue = round($qty * $purchaseRate, 2);
 
                 if ($discountType === 'percent') {
                     $discountAmount = round($grossValue * ($discount / 100), 2);
                 } else {
-                    // treat null or fixed as fixed amount
                     $discountAmount = round($discount, 2);
                 }
 
                 $taxable = round($grossValue - $discountAmount, 2);
-                if ($taxable < 0) {
-                    $taxable = 0.00;
-                }
+                if ($taxable < 0) $taxable = 0;
 
-                // ----- GST CALCULATION (rounded) -----
-                if ($isIntra) {
-                    $cgst = round(($taxable * ($gst->rate / 2)) / 100, 2);
-                    $sgst = round(($taxable * ($gst->rate / 2)) / 100, 2);
-                    $igst = 0.00;
-                } else {
-                    $cgst = 0.00;
-                    $sgst = 0.00;
-                    $igst = round(($taxable * $gst->rate) / 100, 2);
-                }
+                // GST Logic
+                $taxRate = $gst->rate;
+                $cgst = $isIntra ? round(($taxable * ($taxRate / 2)) / 100, 2) : 0;
+                $sgst = $isIntra ? round(($taxable * ($taxRate / 2)) / 100, 2) : 0;
+                $igst = !$isIntra ? round(($taxable * $taxRate) / 100, 2) : 0;
 
-                // ----- INSERT PURCHASE LINE -----
                 $line = PurchaseLine::create([
-                    'purchase_bill_id' => $bill->id,
-                    'product_id'       => $product->id,
-                    'gst_rate_id'      => $gst->id,
-                    'qty'              => $qty,
-                    'free_qty'         => $freeQty,
-                    'purchase_rate'    => round($purchaseRate, 2),
-                    'hsn_code'         => $hsn,
+                    'purchase_bill_id'  => $bill->id,
+                    'product_id'        => $product->id,
+                    'qty'               => $qty,
+                    'free_qty'          => $freeQty,
+                    'purchase_rate'     => $purchaseRate,
+                    'taxable_value'     => $taxable,
+                    'cgst'              => $cgst,
+                    'sgst'              => $sgst,
+                    'igst'              => $igst,
+                    'gst_rate_id'       => $lineData['gst_rate_id'],
                     'discount_type'    => $discountType,
                     'discount'         => $discount,
-                    'batch_no'         => $lineData['batch_no'] ?? null,
-                    'expiry_date'      => $lineData['expiry_date'] ?? null,
-
-                    'taxable_value'    => $taxable,
-                    'cgst'             => $cgst,
-                    'sgst'             => $sgst,
-                    'igst'             => $igst,
+                    'hsn_code'          => $line['hsn_code'] ?? $product->hsn_code,
+                    'batch_no'          => $lineData['batch_no'] ?? null,
+                    'expiry_date'       => $lineData['expiry_date'] ?? null,
                 ]);
 
-                // ----- INVENTORY RECORDS -----
-                // Create inventory for purchased qty (non-free)
-                Inventory::create([
-                    'product_id'       => $product->id,
-                    'branch_id'        => $validated['branch_id'],
-                    'purchase_bill_id' => $bill->id,
-                    'purchase_line_id' => $line->id,
-                    'qty'              => $qty,
-                    'free'             => false,
-                    'rate'             => round($purchaseRate, 2),
-                    'amount'           => round($qty * $purchaseRate, 2),
-                    'batch_no'         => $lineData['batch_no'] ?? null,
-                    'expiry_date'      => $lineData['expiry_date'] ?? null,
-                ]);
+                // --- BATCH BARCODE LOGIC ---
+                // 1. Check if a batch with SAME prices and SAME batch_no already exists
+                $existingBatch = Inventory::where('product_id', $product->id)
+                    ->where('branch_id', $validated['branch_id'])
+                    ->where('selling_price', $lineData['selling_price'])
+                    ->where('mrp', $lineData['mrp'])
+                    ->where('batch_no', $lineData['batch_no'])
+                    ->where('cost_price', $purchaseRate)
+                    ->where('free', 0) // Paid items only
+                    ->first();
 
-                // Create inventory for free qty (rate = 0, amount = 0)
-                if ($freeQty > 0) {
+                if ($existingBatch) {
+                    // Same price, same batch? Just add stock.
+                    $existingBatch->increment('qty', $qty);
+                    $batchBarcode = $existingBatch->batch_barcode;
+
+                    $existingBatch->amount = $existingBatch->qty * $existingBatch->cost_price;
+                    $existingBatch->save();
+                } else {
+                    // New Price or New Batch? Generate unique barcode
+                    // If the product master barcode is already used by another batch, add suffix
+                    $batchBarcode = $product->barcode;
+                    if (Inventory::where('batch_barcode', $batchBarcode)->exists()) {
+                        $batchBarcode = $product->barcode . '-' . strtoupper(Str::random(4));
+                    }
+
+                    $isOpening = (int)($lineData['is_opening'] ?? 0);
+
                     Inventory::create([
                         'product_id'       => $product->id,
                         'branch_id'        => $validated['branch_id'],
                         'purchase_bill_id' => $bill->id,
                         'purchase_line_id' => $line->id,
-                        'qty'              => $freeQty,
-                        'sold_qty'         => 0,
-                        'free'             => true,
-                        'rate'             => 0.00,
-                        'amount'           => 0.00,
-                        'batch_no'         => $lineData['batch_no'] ?? null,
+                        'batch_barcode'    => $batchBarcode,
+                        'batch_no'         => $lineData['batch_no'],
+                        'mrp'              => $lineData['mrp'],
+                        'selling_price'    => $lineData['selling_price'],
+                        'cost_price'       => $purchaseRate,
+                        'qty'              => $qty,
+                        'free'             => false,
+                        'rate'             => $purchaseRate,
+                        'amount'           => $qty * $purchaseRate,
                         'expiry_date'      => $lineData['expiry_date'] ?? null,
+                        'is_opening'       => $isOpening,
                     ]);
                 }
 
-                // ----- EFFECTIVE RATE (accounting for free items) -----
-                // If supplier gave free items, effective rate per unit reduces
-                $totalReceivedUnits = $qty + $freeQty;
-                if ($totalReceivedUnits > 0) {
-                    // total paid for goods = qty * purchaseRate (free items are not paid)
-                    $effectiveRate = round(($qty * $purchaseRate) / $totalReceivedUnits, 4); // keep more precision for avg calc
-                } else {
-                    $effectiveRate = round($purchaseRate, 4);
+                // 2. Handle FREE Quantity (Separate Row per your logic)
+                if ($freeQty > 0) {
+                    $isOpening = (int)($lineData['is_opening'] ?? 0);
+
+                    $existingFreeBatch = Inventory::where('product_id', $product->id)
+                        ->where('branch_id', $validated['branch_id'])
+                        ->where('batch_no', $lineData['batch_no'])
+                        ->where('mrp', $lineData['mrp'])
+                        ->where('selling_price', $lineData['selling_price'])
+                        ->where('cost_price', 0)
+                        ->where('free', 1)
+                        ->first();
+
+                    if ($existingFreeBatch) {
+                        $existingFreeBatch->increment('qty', $freeQty);
+                    } else {
+                        Inventory::create([
+                            'product_id'       => $product->id,
+                            'branch_id'        => $validated['branch_id'],
+                            'purchase_bill_id' => $bill->id,
+                            'purchase_line_id' => $line->id,
+                            'batch_barcode'    => $batchBarcode,
+                            'batch_no'         => $lineData['batch_no'],
+                            'mrp'              => $lineData['mrp'],
+                            'selling_price'    => $lineData['selling_price'],
+                            'cost_price'       => 0,
+                            'qty'              => $freeQty,
+                            'free'             => true,
+                            'rate'             => 0,
+                            'amount'           => 0,
+                            'expiry_date'      => $lineData['expiry_date'] ?? null,
+                            'is_opening'       => $isOpening,
+                        ]);
+                    }
                 }
 
-                // ----- WEIGHTED AVERAGE COST UPDATE -----
-                // compute existing stock value (use cost_price and current stock)
-                $existingStockQty = (float) $product->stock;
-                $existingCostPrice = (float) $product->cost_price;
-
-                $oldStockValue = round($existingStockQty * $existingCostPrice, 4);
-                $newStockValue = round($totalReceivedUnits * $effectiveRate, 4);
-
-                $newTotalQty = $existingStockQty + $totalReceivedUnits;
-
-                if ($newTotalQty > 0) {
-                    $newCostPrice = ($oldStockValue + $newStockValue) / $newTotalQty;
-                } else {
-                    $newCostPrice = $effectiveRate;
-                }
-
-                // rounding cost price to 2 decimals for storage
-                $product->cost_price = round($newCostPrice, 2);
-                $product->stock = $newTotalQty;
-                $product->save();
-
-                // ----- ITC ENTRY (only on charged taxable value) -----
+                // ITC Entry
                 ItcEntry::create([
                     'purchase_bill_id' => $bill->id,
                     'purchase_line_id' => $line->id,
@@ -326,46 +323,29 @@ class PurchaseBillController extends Controller
                     'created_by'       => $user->id,
                 ]);
 
-                // ----- UPDATE RUNNING TOTALS -----
-                $totalTaxable += $taxable;
-                $totalCgst += $cgst;
-                $totalSgst += $sgst;
-                $totalIgst += $igst;
+                $totals['taxable'] += $taxable;
+                $totals['cgst'] += $cgst;
+                $totals['sgst'] += $sgst;
+                $totals['igst'] += $igst;
             }
 
-            // Round totals before saving
-            $totalTaxable = round($totalTaxable, 2);
-            $totalCgst = round($totalCgst, 2);
-            $totalSgst = round($totalSgst, 2);
-            $totalIgst = round($totalIgst, 2);
-            $totalTax = round($totalCgst + $totalSgst + $totalIgst, 2);
-            $grandTotal = round($totalTaxable + $totalTax, 2);
-
-            // ----- UPDATE BILL TOTALS -----
+            // Update Bill Totals
+            $totalTax = ($totals['cgst'] + $totals['sgst'] + $totals['igst']);
             $bill->update([
-                'taxable_value' => $totalTaxable,
-                'cgst_amount'   => $totalCgst,
-                'sgst_amount'   => $totalSgst,
-                'igst_amount'   => $totalIgst,
+                'taxable_value' => $totals['taxable'],
+                'cgst_amount'   => $totals['cgst'],
+                'sgst_amount'   => $totals['sgst'],
+                'igst_amount'   => $totals['igst'],
                 'total_tax'     => $totalTax,
-                'total_amount'  => $grandTotal,
+                'total_amount'  => ($totals['taxable'] + $totalTax),
                 'received'      => true,
             ]);
 
             DB::commit();
-
-            return response()->json([
-                'status' => true,
-                'message' => 'Purchase bill created successfully',
-                'data' => $bill->load(['lines', 'lines.product', 'lines.inventory'])
-            ], 201);
+            return response()->json(['status' => true, 'message' => 'Success', 'bill' => $bill], 201);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json([
-                'status' => false,
-                'message' => 'An error occurred while creating the purchase bill.',
-                'error' => $e->getMessage()
-            ], 500);
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
         }
     }
 

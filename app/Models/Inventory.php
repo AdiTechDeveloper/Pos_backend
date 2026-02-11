@@ -11,6 +11,10 @@ class Inventory extends Model
         'branch_id',
         'purchase_bill_id',
         'purchase_line_id',
+        'batch_barcode',
+        'mrp',
+        'selling_price',
+        'cost_price',
         'qty',
         'sold_qty',
         'expired_qty',
@@ -19,7 +23,8 @@ class Inventory extends Model
         'batch_no',
         'expiry_date',
         'rate',
-        'amount'
+        'amount',
+        'is_opening',
     ];
 
     protected $appends = ['available_qty'];

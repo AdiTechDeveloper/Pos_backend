@@ -24,7 +24,7 @@ class ProductController extends Controller
             ->when($request->search, function ($q) use ($request) {
                 $q->where('name', 'like', '%' . $request->search . '%');
             })
-            ->with(['store', 'brand', 'category', 'gstRate'])
+            ->with(['store', 'brand', 'category', 'gstRate', 'inventories'])
             ->orderBy('name', 'asc')
             ->get();
 
@@ -74,19 +74,12 @@ class ProductController extends Controller
     {
         try {
             $request->validate([
-                'name' => 'required|string',
-                // 'sku' => 'required|string|unique:products,sku',
-                // 'brand_id' => 'nullable|integer',
-                // 'category_id' => 'nullable|integer',
-                // 'hsn_code' => 'nullable|string',
-                // 'gst_rate_id' => 'nullable|numeric',
-                // 'mrp' => 'nullable|numeric',
-                // 'selling_price' => 'nullable|numeric',
-                // 'cost_price' => 'nullable|numeric',
+                'name'      => 'required|string',
+                'sku'       => 'nullable|string|unique:products,sku',
+                'barcode'   => 'nullable|string', // This will be the Manufacturer barcode if scanned
             ]);
 
             $user = Auth::user();
-
             if (!in_array($user->role, ['admin', 'manager'])) {
                 return response()->json([
                     'status' => false,
@@ -96,23 +89,30 @@ class ProductController extends Controller
 
             $storeId = Auth::user()->store_id;
 
-            do {
-                $barcode = $this->generateEan13Barcode();
+            $barcode = $request->barcode;
+
+            if (empty($barcode)) {
+                do {
+                    $barcode = $this->generateEan13Barcode();
+                    $exists = Product::where('barcode', $barcode)->exists();
+                } while ($exists);
+            } else {
                 $exists = Product::where('barcode', $barcode)->exists();
-            } while ($exists);
+                if ($exists) {
+                    return response()->json(['status' => false, 'message' => 'Product with this barcode already exists'], 422);
+                }
+            }
 
             $product = Product::create([
                 'store_id' => $storeId,
                 'sku' => $request->sku,
-                'barcode' => $barcode,
+                'barcode' => $barcode, // Master barcode
                 'name' => $request->name,
                 'brand_id' => $request->brand_id,
                 'category_id' => $request->category_id,
                 'hsn_code' => $request->hsn_code,
                 'gst_rate_id' => $request->gst_rate_id,
-                'mrp' => $request->mrp,
-                'selling_price' => $request->selling_price,
-                'cost_price' => $request->cost_price,
+                'gst_inclusive' => $request->gst_inclusive ?? 0,
                 'created_by' => Auth::id(),
             ]);
 
@@ -135,14 +135,6 @@ class ProductController extends Controller
         try {
             $request->validate([
                 'name' => 'required|string',
-                // 'sku' => 'required|string|unique:products,sku,' . $id,
-                // 'brand_id' => 'nullable|integer',
-                // 'category_id' => 'nullable|integer',
-                // 'hsn_code' => 'nullable|string',
-                // 'gst_rate_id' => 'nullable|numeric',
-                // 'mrp' => 'nullable|numeric',
-                // 'selling_price' => 'nullable|numeric',
-                // 'cost_price' => 'nullable|numeric',
             ]);
 
             $user = Auth::user();
@@ -172,9 +164,7 @@ class ProductController extends Controller
                 'category_id' => $request->category_id,
                 'hsn_code' => $request->hsn_code,
                 'gst_rate_id' => $request->gst_rate_id,
-                'mrp' => $request->mrp,
-                'selling_price' => $request->selling_price,
-                'cost_price' => $request->cost_price,
+                'gst_inclusive' => $request->gst_inclusive ?? 0,
                 'updated_by' => Auth::id(),
             ]);
 
