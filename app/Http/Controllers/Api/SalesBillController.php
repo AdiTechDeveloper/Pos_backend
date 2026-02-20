@@ -509,6 +509,7 @@ class SalesBillController extends Controller
                     'cgst'      => $line->cgst,
                     'sgst'      => $line->sgst,
                     'igst'      => $line->igst,
+                    'cess'      => $line->cess,
                     'gst_total' => $line->total_gst,
                 ];
             });
@@ -537,6 +538,8 @@ class SalesBillController extends Controller
                     'total_saved'  => $bill->total_saved,
                     'cgst_total'   => $items->sum('cgst'),
                     'sgst_total'   => $items->sum('sgst'),
+                    'igst_total'   => $items->sum('igst'),
+                    'cess_total'   => $items->sum('cess'),
                 ],
 
                 'items'   => $items,
