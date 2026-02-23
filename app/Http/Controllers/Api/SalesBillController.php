@@ -36,7 +36,7 @@ class SalesBillController extends Controller
         $batches = Inventory::where('product_id', $product->id)
             ->whereIn('branch_id', $branchIds)
             ->whereColumn('sold_qty', '<', 'qty')
-            ->select('id', 'batch_no', 'batch_barcode', 'mrp', 'selling_price', 'expiry_date', 'qty', 'sold_qty')
+            ->select('id', 'batch_no', 'batch_barcode', 'mrp', 'cost_price', 'selling_price', 'expiry_date', 'qty', 'sold_qty')
             ->get()
             ->groupBy('batch_barcode')
             ->map(function ($group) {
@@ -47,6 +47,7 @@ class SalesBillController extends Controller
                     'batch_barcode' => $first->batch_barcode,
                     'mrp'           => $first->mrp,
                     'selling_price' => $first->selling_price,
+                    'cost_price'    => $first->cost_price,
                     'expiry_date'   => $first->expiry_date,
                     'total_stock'   => $group->sum(fn($i) => $i->qty - $i->sold_qty),
                 ];
@@ -61,7 +62,8 @@ class SalesBillController extends Controller
             'product' => [
                 'id' => $product->id,
                 'name' => $product->name,
-                'gst_rate' => $product->gstRate->rate,
+                'gst_rate' => $product->gstRate,
+                'hsn_code' => $product->hsn_code,
                 'is_gst_inclusive' => $product->gst_inclusive,
             ],
             'batches' => $batches
