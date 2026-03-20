@@ -28,7 +28,7 @@ class SalesBillController extends Controller
             ->where('barcode', $request->barcode)
             ->first();
 
-        if (!$product) {
+        if (! $product) {
             return response()->json(['status' => false, 'message' => 'Product not found'], 404);
         }
 
@@ -41,15 +41,16 @@ class SalesBillController extends Controller
             ->groupBy('batch_barcode')
             ->map(function ($group) {
                 $first = $group->first();
+
                 return [
-                    'inventory_id'  => $first->id, // Reference ID for the store method
-                    'batch_no'      => $first->batch_no,
+                    'inventory_id' => $first->id, // Reference ID for the store method
+                    'batch_no' => $first->batch_no,
                     'batch_barcode' => $first->batch_barcode,
-                    'mrp'           => $first->mrp,
+                    'mrp' => $first->mrp,
                     'selling_price' => $first->selling_price,
-                    'cost_price'    => $first->cost_price,
-                    'expiry_date'   => $first->expiry_date,
-                    'total_stock'   => $group->sum(fn($i) => $i->qty - $i->sold_qty),
+                    'cost_price' => $first->cost_price,
+                    'expiry_date' => $first->expiry_date,
+                    'total_stock' => $group->sum(fn ($i) => $i->qty - $i->sold_qty),
                 ];
             })->values();
 
@@ -66,7 +67,7 @@ class SalesBillController extends Controller
                 'hsn_code' => $product->hsn_code,
                 'is_gst_inclusive' => $product->gst_inclusive,
             ],
-            'batches' => $batches
+            'batches' => $batches,
         ]);
     }
 
@@ -80,7 +81,7 @@ class SalesBillController extends Controller
                 'branch',
                 'user',
                 'lines.product',
-                'lines'
+                'lines',
             ])->orderBy('id', 'desc');
 
             if ($user->role === 'cashier') {
@@ -88,12 +89,12 @@ class SalesBillController extends Controller
             } elseif ($user->role === 'manager') {
                 $branchIds = $user->branches->pluck('id')->toArray();
 
-                if (!empty($branchIds)) {
+                if (! empty($branchIds)) {
                     $query->whereIn('branch_id', $branchIds);
                 } else {
                     return response()->json([
                         'status' => false,
-                        'message' => 'No branch assigned to this manager.'
+                        'message' => 'No branch assigned to this manager.',
                     ], 400);
                 }
             }
@@ -103,12 +104,12 @@ class SalesBillController extends Controller
             return response()->json([
                 'status' => true,
                 'message' => 'Sales bills fetched successfully',
-                'data' => $bills
+                'data' => $bills,
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -120,13 +121,13 @@ class SalesBillController extends Controller
         try {
             $bill = SalesBill::with([
                 'lines.product',
-                'lines'
+                'lines',
             ])->find($id);
 
-            if (!$bill) {
+            if (! $bill) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Sales bill not found.'
+                    'message' => 'Sales bill not found.',
                 ], 404);
             }
 
@@ -134,28 +135,29 @@ class SalesBillController extends Controller
                 if ($bill->user_id !== $user->id) {
                     return response()->json([
                         'status' => false,
-                        'message' => 'You are not allowed to view this bill.'
+                        'message' => 'You are not allowed to view this bill.',
                     ], 403);
                 }
             } elseif ($user->role === 'manager') {
                 $branchIds = $user->branches->pluck('id')->toArray();
 
-                if (!in_array($bill->branch_id, $branchIds)) {
+                if (! in_array($bill->branch_id, $branchIds)) {
                     return response()->json([
                         'status' => false,
-                        'message' => 'You are not allowed to view bills from another branch.'
+                        'message' => 'You are not allowed to view bills from another branch.',
                     ], 403);
                 }
             }
+
             return response()->json([
                 'status' => true,
                 'message' => 'Sales bill fetched successfully',
-                'data' => $bill
+                'data' => $bill,
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -164,7 +166,7 @@ class SalesBillController extends Controller
     {
         $idempotencyKey = $request->header('Idempotency-Key');
 
-        if (!$idempotencyKey) {
+        if (! $idempotencyKey) {
             return response()->json(['error' => 'Missing Idempotency Key'], 400);
         }
 
@@ -174,7 +176,7 @@ class SalesBillController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Duplicate Store Request Ignored',
-                'data' => $existing
+                'data' => $existing,
             ], 200);
         }
 
@@ -191,18 +193,18 @@ class SalesBillController extends Controller
             $user = Auth::user();
             $branchId = $user->branches->pluck('id')->first();
 
-            if (!$branchId) {
+            if (! $branchId) {
                 return response()->json([
                     'status' => false,
-                    'message' => "User has no branch assigned."
+                    'message' => 'User has no branch assigned.',
                 ], 400);
             }
 
             // Start Bill Number Generation (Original Logic)
-            $storeId   = str_pad($user->store_id, 2, '0', STR_PAD_LEFT);
-            $brId      = str_pad($branchId, 2, '0', STR_PAD_LEFT);
+            $storeId = str_pad($user->store_id, 2, '0', STR_PAD_LEFT);
+            $brId = str_pad($branchId, 2, '0', STR_PAD_LEFT);
             $counterId = str_pad($user->id, 2, '0', STR_PAD_LEFT);
-            $date      = now()->format('ymd');
+            $date = now()->format('ymd');
 
             $todayCount = SalesBill::where('store_id', $user->store_id)
                 ->where('branch_id', $branchId)
@@ -213,13 +215,13 @@ class SalesBillController extends Controller
             $billNo = "{$storeId}{$brId}{$counterId}{$date}{$seq}";
 
             $bill = SalesBill::create([
-                'store_id'      => $user->store_id,
-                'branch_id'     => $branchId,
-                'user_id'       => $user->id,
-                'bill_no'       => $billNo,
-                'bill_status'   => 'pending',
+                'store_id' => $user->store_id,
+                'branch_id' => $branchId,
+                'user_id' => $user->id,
+                'bill_no' => $billNo,
+                'bill_status' => 'pending',
                 'payment_status' => 'unpaid',
-                'created_by'    => $user->id,
+                'created_by' => $user->id,
                 'last_idempotency_key_store' => $idempotencyKey,
             ]);
 
@@ -234,27 +236,37 @@ class SalesBillController extends Controller
                 $product = Product::with('gstRate')->findOrFail($lineData['product_id']);
 
                 // Get specific batch info from inventory table
-                $selectedInventory = Inventory::findOrFail($lineData['inventory_id']);
+                $selectedInventory = Inventory::where('id', $lineData['inventory_id'])
+                    ->where('branch_id', $branchId)
+                    ->firstOrFail();
                 $batchBarcode = $selectedInventory->batch_barcode;
-                $price = (float)$selectedInventory->selling_price;
-                $mrp = (float)$selectedInventory->mrp;
+                $price = (float) $selectedInventory->selling_price;
+                $mrp = (float) $selectedInventory->mrp;
+
+                if ($selectedInventory->qty <= $selectedInventory->sold_qty) {
+                    throw new \Exception('Stock already exhausted for this batch.');
+                }
 
                 if ($price <= 0) {
                     throw new \Exception("Invalid selling price for {$product->name} in this batch.");
                 }
 
-                $requiredQty = (float)$lineData['qty'];
+                $requiredQty = (float) $lineData['qty'];
 
                 // Fetch all rows (Paid + Free) belonging to this specific batch
                 $batchRows = Inventory::where('product_id', $product->id)
                     ->where('batch_barcode', $batchBarcode)
                     ->where('branch_id', $branchId)
                     ->whereColumn('sold_qty', '<', 'qty')
-                    ->orderBy('free', 'asc') // Use paid stock first
+                    ->where(function ($q) {
+                        $q->whereNull('expiry_date')
+                            ->orWhere('expiry_date', '>=', now());
+                    })
+                    ->orderBy('free', 'asc')
                     ->lockForUpdate()
                     ->get();
 
-                $availableStock = $batchRows->sum(fn($inv) => $inv->qty - $inv->sold_qty);
+                $availableStock = $batchRows->sum(fn ($inv) => $inv->qty - $inv->sold_qty);
 
                 if ($availableStock < $requiredQty) {
                     throw new \Exception("Insufficient stock in batch {$selectedInventory->batch_no} for {$product->name}");
@@ -265,15 +277,21 @@ class SalesBillController extends Controller
                 $totalLineCogs = 0;
 
                 foreach ($batchRows as $batch) {
-                    if ($remaining <= 0) break;
+                    if ($remaining <= 0) {
+                        break;
+                    }
                     $available = $batch->qty - $batch->sold_qty;
-                    if ($available <= 0) continue;
+                    if ($available <= 0) {
+                        continue;
+                    }
 
                     $consume = min($available, $remaining);
 
                     // COGS Calculation (Same as your logic but per batch row)
-                    $purchaseRate = (float)$batch->cost_price;
-                    if ($batch->purchase_gst_inclusive && $product->gstRate->rate > 0) {
+                    $purchaseRate = (float) $batch->cost_price;
+                    $gstRate = $product->gstRate->rate ?? 0;
+
+                    if ($batch->purchase_gst_inclusive && $gstRate > 0) {
                         $purchaseRate = $purchaseRate * 100 / (100 + $product->gstRate->rate);
                     }
 
@@ -317,33 +335,33 @@ class SalesBillController extends Controller
 
                 // Record Line
                 $salesLine = SalesBillLine::create([
-                    'sales_bill_id'  => $bill->id,
-                    'product_id'     => $product->id,
-                    'branch_id'      => $branchId,
-                    'inventory_id'   => $selectedInventory->id,
-                    'qty'            => $requiredQty,
-                    'rate'           => $price,
+                    'sales_bill_id' => $bill->id,
+                    'product_id' => $product->id,
+                    'branch_id' => $branchId,
+                    'inventory_id' => $selectedInventory->id,
+                    'qty' => $requiredQty,
+                    'rate' => $price,
                     'taxable_amount' => $taxable,
-                    'amount'         => $lineAmount,
-                    'cgst'           => $cgst,
-                    'sgst'           => $sgst,
-                    'igst'           => $igst,
-                    'total_gst'      => $totalLineGst,
-                    'cogs'           => $totalLineCogs,
-                    'profit'         => $profit,
+                    'amount' => $lineAmount,
+                    'cgst' => $cgst,
+                    'sgst' => $sgst,
+                    'igst' => $igst,
+                    'total_gst' => $totalLineGst,
+                    'cogs' => $totalLineCogs,
+                    'profit' => $profit,
                 ]);
 
                 // GST Ledger Entry
                 if ($totalLineGst > 0) {
                     GstOutputLedger::create([
-                        'sales_bill_id'      => $bill->id,
+                        'sales_bill_id' => $bill->id,
                         'sales_bill_line_id' => $salesLine->id,
-                        'product_id'         => $product->id,
-                        'gst_rate_id'        => $product->gst_rate_id,
-                        'cgst'               => $cgst,
+                        'product_id' => $product->id,
+                        'gst_rate_id' => $product->gst_rate_id,
+                        'cgst' => $cgst,
                         'sgst' => $sgst,
                         'igst' => $igst,
-                        'total_gst'          => $totalLineGst,
+                        'total_gst' => $totalLineGst,
                     ]);
                 }
 
@@ -357,11 +375,11 @@ class SalesBillController extends Controller
 
             // Final Bill Update
             $bill->update([
-                'subtotal'     => $subtotal,
-                'total_gst'    => $totalGst,
+                'subtotal' => $subtotal,
+                'total_gst' => $totalGst,
                 'total_amount' => $subtotal,
-                'total_saved'  => $totalSaved,
-                'total_cogs'   => $totalCogs,
+                'total_saved' => $totalSaved,
+                'total_cogs' => $totalCogs,
                 'total_profit' => $totalProfit,
             ]);
 
@@ -370,6 +388,7 @@ class SalesBillController extends Controller
             return response()->json(['status' => true, 'message' => 'Sales bill created successfully', 'data' => $bill->load('lines')]);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
         }
     }
@@ -389,21 +408,21 @@ class SalesBillController extends Controller
 
         $idempotencyKey = $request->header('Idempotency-Key');
 
-        if (!$idempotencyKey) {
+        if (! $idempotencyKey) {
             return response()->json([
                 'status' => false,
-                'message' => 'Idempotency-Key header is required.'
+                'message' => 'Idempotency-Key header is required.',
             ], 400);
         }
 
         $bill = SalesBill::findOrFail($request->sales_bill_id);
 
         // prevent duplicate
-        if ($bill->last_idempotency_key_payment  === $idempotencyKey) {
+        if ($bill->last_idempotency_key_payment === $idempotencyKey) {
             return response()->json([
                 'status' => true,
                 'message' => 'Duplicate request ignored. Returning previous result.',
-                'bill' => $bill->load('payments')
+                'bill' => $bill->load('payments'),
             ]);
         }
 
@@ -417,12 +436,12 @@ class SalesBillController extends Controller
             foreach ($request->payments as $payment) {
 
                 SalesBillPayment::create([
-                    'sales_bill_id'  => $bill->id,
-                    'method'         => $payment['method'],
-                    'amount'         => $payment['amount'],
+                    'sales_bill_id' => $bill->id,
+                    'method' => $payment['method'],
+                    'amount' => $payment['amount'],
                     'transaction_id' => $payment['transaction_id'] ?? null,
-                    'gateway'        => $payment['gateway'] ?? null,
-                    'status'         => 'success',
+                    'gateway' => $payment['gateway'] ?? null,
+                    'status' => 'success',
                 ]);
 
                 $totalPaid += $payment['amount'];
@@ -455,7 +474,7 @@ class SalesBillController extends Controller
 
             return response()->json([
                 'status' => true,
-                'message' => "Payment recorded successfully",
+                'message' => 'Payment recorded successfully',
                 'bill' => $bill->load('payments'),
             ]);
         } catch (\Exception $e) {
@@ -473,10 +492,10 @@ class SalesBillController extends Controller
     {
         $ids = $request->id; // array [1,2]
 
-        if (!is_array($ids) || empty($ids)) {
+        if (! is_array($ids) || empty($ids)) {
             return response()->json([
                 'status' => false,
-                'message' => 'No bill IDs provided'
+                'message' => 'No bill IDs provided',
             ], 422);
         }
 
@@ -486,13 +505,13 @@ class SalesBillController extends Controller
             'user',
             'lines.product',
             'lines.inventory',
-            'lines.gstRate'
+            'lines.gstRate',
         ])->whereIn('id', $ids)->get();
 
         if ($bills->isEmpty()) {
             return response()->json([
                 'status' => false,
-                'message' => 'Bills not found'
+                'message' => 'Bills not found',
             ], 404);
         }
         // If you want multiple bills print data:
@@ -502,57 +521,57 @@ class SalesBillController extends Controller
                 $mrp = $line->inventory->mrp ?? $line->product->mrp;
 
                 return [
-                    'name'      => $line->product->name,
-                    'qty'       => $line->qty,
-                    'mrp'       => round($mrp, 2),
-                    'selling'   => round($sellingPrice, 2),
-                    'amount'    => $line->amount,
-                    'saved'     => ($line->product->mrp - $line->product->selling_price) * $line->qty,
-                    'cgst'      => $line->cgst,
-                    'sgst'      => $line->sgst,
-                    'igst'      => $line->igst,
-                    'cess'      => $line->cess,
+                    'name' => $line->product->name,
+                    'qty' => $line->qty,
+                    'mrp' => round($mrp, 2),
+                    'selling' => round($sellingPrice, 2),
+                    'amount' => $line->amount,
+                    'saved' => ($line->product->mrp - $line->product->selling_price) * $line->qty,
+                    'cgst' => $line->cgst,
+                    'sgst' => $line->sgst,
+                    'igst' => $line->igst,
+                    'cess' => $line->cess,
                     'gst_total' => $line->total_gst,
                 ];
             });
 
-            $barcode = "data:image/png;base64," . DNS1D::getBarcodePNG($bill->bill_no, 'C128', 3, 90);
+            $barcode = 'data:image/png;base64,'.DNS1D::getBarcodePNG($bill->bill_no, 'C128', 3, 90);
 
             return [
                 'store' => [
-                    'name'  => $bill->store->name,
+                    'name' => $bill->store->name,
                     'state' => $bill->store->state,
                     'phone' => $bill->store->phone,
                 ],
 
                 'branch' => [
-                    'name'    => $bill->branch->name,
+                    'name' => $bill->branch->name,
                     'address' => $bill->branch->address,
                 ],
 
                 'bill' => [
-                    'number'       => $bill->bill_no,
-                    'date'         => $bill->created_at->format('d-m-Y H:i'),
-                    'cashier'      => $bill->user->name,
-                    'subtotal'     => $bill->subtotal,
-                    'total_gst'    => $bill->total_gst,
+                    'number' => $bill->bill_no,
+                    'date' => $bill->created_at->setTimezone('Asia/Kolkata')->format('d-m-Y H:i'),
+                    'cashier' => $bill->user->name,
+                    'subtotal' => $bill->subtotal,
+                    'total_gst' => $bill->total_gst,
                     'total_amount' => $bill->total_amount,
-                    'total_saved'  => $bill->total_saved,
-                    'cgst_total'   => $items->sum('cgst'),
-                    'sgst_total'   => $items->sum('sgst'),
-                    'igst_total'   => $items->sum('igst'),
-                    'cess_total'   => $items->sum('cess'),
+                    'total_saved' => $bill->total_saved,
+                    'cgst_total' => $items->sum('cgst'),
+                    'sgst_total' => $items->sum('sgst'),
+                    'igst_total' => $items->sum('igst'),
+                    'cess_total' => $items->sum('cess'),
                 ],
 
-                'items'   => $items,
+                'items' => $items,
                 'barcode' => $barcode,
-                'footer'  => "Thank You! Visit Again"
+                'footer' => 'Thank You! Visit Again',
             ];
         });
 
         return response()->json([
             'status' => true,
-            'data'   => $response
+            'data' => $response,
         ]);
     }
 
@@ -568,16 +587,14 @@ class SalesBillController extends Controller
             if ($user->role === 'manager') {
                 $query->whereHas(
                     'bill',
-                    fn($q) =>
-                    $q->where('branch_id', $branchId)
+                    fn ($q) => $q->where('branch_id', $branchId)
                 );
             }
 
             if ($user->role === 'admin') {
                 $query->whereHas(
                     'bill',
-                    fn($q) =>
-                    $q->where('store_id', $user->store_id)
+                    fn ($q) => $q->where('store_id', $user->store_id)
                 );
             }
 
@@ -587,7 +604,7 @@ class SalesBillController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
