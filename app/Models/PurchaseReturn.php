@@ -10,6 +10,7 @@ class PurchaseReturn extends Model
     protected $fillable = [
         'purchase_bill_id',
         'supplier_id',
+        'return_type',
         'branch_id',
         'return_date',
         'total_taxable',

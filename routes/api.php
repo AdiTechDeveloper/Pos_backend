@@ -134,7 +134,10 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
 Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(function () {
     Route::get('/purchase-return', [PurchaseReturnController::class, 'index']);
     Route::get('/purchase-return/{id}', [PurchaseReturnController::class, 'show']);
-    Route::post('/purchase-return', [PurchaseReturnController::class, 'store']);
+
+    // purchase replacement
+    Route::post('/purchase-replacement', [PurchaseReturnController::class, 'purchaseReplacement']);
+    Route::post('/purchase-return', [PurchaseReturnController::class, 'purchaseReturn']);
 });
 
 // Salesbill routes
