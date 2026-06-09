@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Customer;
 use App\Models\GstOutputLedger;
 use App\Models\Inventory;
 use App\Models\Product;
@@ -185,6 +186,14 @@ class SalesBillController extends Controller
             'lines.*.product_id' => 'required|integer',
             'lines.*.inventory_id' => 'required|integer', // From frontend popup
             'lines.*.qty' => 'required|numeric|min:0.01',
+
+            'customer_id' => 'nullable|exists:customers,id',
+            'customer' => 'nullable|array',
+            'customer.name' => 'required_with:customer|string|max:255',
+            'customer.mobile' => 'required_with:customer|string|max:15',
+            'payment_type' => 'required|in:cash,online,split,credit',
+            'cash_received' => 'nullable|numeric|min:0',
+            'balance_return' => 'nullable|numeric|min:0',
         ]);
 
         try {
@@ -223,6 +232,8 @@ class SalesBillController extends Controller
                 'payment_status' => 'unpaid',
                 'created_by' => $user->id,
                 'last_idempotency_key_store' => $idempotencyKey,
+                'customer_id' => $request->customer_id,
+                'payment_type' => $request->payment_type,
             ]);
 
             $subtotal = 0;
@@ -381,7 +392,33 @@ class SalesBillController extends Controller
                 'total_saved' => $totalSaved,
                 'total_cogs' => $totalCogs,
                 'total_profit' => $totalProfit,
+                'cash_received' => $request->payment_type === 'credit' ? 0 : ($request->cash_received ?? 0),
+                'balance_return' => $request->payment_type === 'credit' ? 0 : ($request->balance_return ?? 0),
             ]);
+
+            if ($request->payment_type === 'credit') {
+
+                if ($request->customer) {
+                    $customer = Customer::firstOrCreate(
+                        ['mobile' => $request->customer['mobile']],
+                        ['name' => $request->customer['name']]
+                    );
+
+                    $bill->customer_id = $customer->id;
+                }
+
+                $bill->paid_amount = 0;
+                $bill->due_amount = $subtotal;
+                $bill->payment_status = 'unpaid';
+
+            } else {
+
+                $bill->paid_amount = 0;
+                $bill->due_amount = $subtotal;
+                $bill->payment_status = 'unpaid';
+            }
+
+            $bill->save();
 
             DB::commit();
 
@@ -447,10 +484,11 @@ class SalesBillController extends Controller
                 $totalPaid += $payment['amount'];
             }
 
-            // Store actual customer cash
             $bill->cash_received = $actualCashReceived;
 
-            // Calculate balance return
+            $bill->paid_amount = min($totalPaid, $bill->total_amount);
+            $bill->due_amount = max($bill->total_amount - $bill->paid_amount, 0);
+
             if ($actualCashReceived > $bill->total_amount) {
                 $bill->balance_return = $actualCashReceived - $bill->total_amount;
             } else {
@@ -458,10 +496,10 @@ class SalesBillController extends Controller
             }
 
             // Payment status
-            if ($totalPaid >= $bill->total_amount) {
+            if (floatval($bill->due_amount) == 0) {
                 $bill->payment_status = 'paid';
                 $bill->bill_status = 'completed';
-            } elseif ($totalPaid > 0) {
+            } elseif ($bill->paid_amount > 0) {
                 $bill->payment_status = 'partial';
             } else {
                 $bill->payment_status = 'unpaid';
@@ -486,6 +524,131 @@ class SalesBillController extends Controller
                 'message' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    public function collectPayment(Request $request)
+    {
+        $request->validate([
+            'sales_bill_id' => 'required|exists:sales_bills,id',
+            'amount' => 'required|numeric|min:0.01',
+            'method' => 'required|string',
+            'transaction_id' => 'nullable|string',
+            'gateway' => 'nullable|string',
+        ]);
+
+        $idempotencyKey = $request->header('Idempotency-Key');
+
+        if (! $idempotencyKey) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Idempotency-Key is required',
+            ], 400);
+        }
+
+        DB::beginTransaction();
+
+        try {
+            $bill = SalesBill::lockForUpdate()->findOrFail($request->sales_bill_id);
+
+            // Prevent duplicate request
+            if ($bill->last_idempotency_key_payment === $idempotencyKey) {
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Duplicate request ignored',
+                    'bill' => $bill->load('payments'),
+                ]);
+            }
+
+            // Prevent overpayment
+            if ($request->amount > $bill->due_amount) {
+                throw new \Exception('Payment exceeds due amount');
+            }
+
+            // Save payment
+            SalesBillPayment::create([
+                'sales_bill_id' => $bill->id,
+                'method' => $request->method,
+                'amount' => $request->amount,
+                'transaction_id' => $request->transaction_id,
+                'gateway' => $request->gateway,
+                'status' => 'success',
+                'payment_phase' => 'collection', // KEY DIFFERENCE
+            ]);
+
+            $totalPaid = SalesBillPayment::where('sales_bill_id', $bill->id)
+                ->where('status', 'success')
+                ->sum('amount');
+
+            $bill->paid_amount = $totalPaid;
+            $bill->due_amount = $bill->total_amount - $totalPaid;
+            $bill->cash_received = $bill->cash_received ?? 0;
+            $bill->balance_return = $bill->balance_return ?? 0;
+
+            // Update status
+            if ($bill->due_amount == 0) {
+                $bill->payment_status = 'paid';
+                $bill->bill_status = 'completed';
+            } elseif ($totalPaid > 0) {
+                $bill->payment_status = 'partial';
+            } else {
+                $bill->payment_status = 'unpaid';
+            }
+
+            $bill->last_idempotency_key_payment = $idempotencyKey;
+            $bill->save();
+
+            DB::commit();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Payment collected successfully',
+                'bill' => $bill->load('payments'),
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function customerWithDue()
+    {
+        $customers = SalesBill::select([
+            'customer_id',
+            DB::raw('SUM(due_amount) as total_due'),
+        ])
+            ->whereNotNull('customer_id')
+            ->where('due_amount', '>', 0)
+            ->groupBy('customer_id')
+            ->with('customer:id,name,mobile')
+            ->get();
+
+        return response()->json([
+            'status' => true,
+            'data' => $customers,
+        ]);
+    }
+
+    public function customerDue(int $customerMobile)
+    {
+        $customer = Customer::where('mobile', $customerMobile)->first();
+
+        if (! $customer) {
+            return response()->json(['customer' => null]);
+        }
+
+        $totalDue = SalesBill::where('customer_id', $customer->id)
+            ->where('due_amount', '>', 0)
+            ->sum('due_amount');
+
+        return response()->json([
+            'customer' => $customer,
+            'total_due' => $totalDue,
+        ]);
     }
 
     public function getPrintData(Request $request)

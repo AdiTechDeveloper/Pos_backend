@@ -152,6 +152,9 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     Route::get('/sales-bills/gst-report', [SalesBillController::class, 'gstReport']);
     // Payment method
     Route::post('/sales-bills/pay', [SalesBillController::class, 'pay']);
+    Route::post('/sales-bills/collect-payment', [SalesBillController::class, 'collectPayment']);
+    Route::get('/customer/due', [SalesBillController::class, 'customerWithDue']);
+    Route::get('/customer-due/{customerMobile}', [SalesBillController::class, 'customerDue']);
     Route::post('/sales-bill/print-data', [SalesBillController::class, 'getPrintData']);
 });
 

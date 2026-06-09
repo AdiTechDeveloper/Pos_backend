@@ -10,10 +10,13 @@ class SalesBill extends Model
         'store_id',
         'branch_id',
         'user_id',
+        'customer_id',
         'bill_no',
         'subtotal',
         'total_gst',
         'total_amount',
+        'paid_amount',
+        'due_amount',
         'total_saved',
         'total_cogs',
         'total_profit',
@@ -23,17 +26,19 @@ class SalesBill extends Model
         'last_idempotency_key_store',
         'last_idempotency_key_payment',
         'bill_status',
-        'created_by'
+        'created_by',
     ];
 
     public function lines()
     {
         return $this->hasMany(SalesBillLine::class);
     }
+
     public function brand()
     {
         return $this->belongsTo(Brand::class);
     }
+
     public function store()
     {
         return $this->belongsTo(Store::class);
@@ -52,5 +57,10 @@ class SalesBill extends Model
     public function payments()
     {
         return $this->hasMany(SalesBillPayment::class);
+    }
+
+    public function customer()
+    {
+        return $this->belongsTo(Customer::class);
     }
 }
