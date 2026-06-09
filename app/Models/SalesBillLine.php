@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class SalesBillLine extends Model
 {
@@ -14,20 +13,19 @@ class SalesBillLine extends Model
         'inventory_id',
         'qty',
         'rate',
+        'selling_price',
+        'original_price',
+        'override_price',
+        'is_price_overridden',
         'taxable_amount',
         'amount',
-        'cogs',
-        'profit',
         'cgst',
         'sgst',
         'igst',
-        'total_gst'
+        'total_gst',
+        'cogs',
+        'profit',
     ];
-
-    public function bill()
-    {
-        return $this->belongsTo(SalesBill::class);
-    }
 
     public function product()
     {
@@ -44,8 +42,8 @@ class SalesBillLine extends Model
         return $this->belongsTo(GstRate::class);
     }
 
-    public function branch(): BelongsTo
+    public function bill()
     {
-        return $this->belongsTo(Branch::class);
+        return $this->belongsTo(SalesBill::class, 'sales_bill_id');
     }
 }
