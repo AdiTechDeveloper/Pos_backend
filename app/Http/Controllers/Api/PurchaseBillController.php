@@ -80,8 +80,6 @@ class PurchaseBillController extends Controller
             }
 
             if ($user->role === 'admin') {
-
-                // Admin can see all bills for their store only
                 if ($bill->store_id != $user->store_id) {
                     return response()->json([
                         'status' => false,
@@ -89,10 +87,7 @@ class PurchaseBillController extends Controller
                     ], 403);
                 }
 
-                return response()->json([
-                    'status' => true,
-                    'data' => $bill,
-                ]);
+                return response()->json(['status' => true, 'data' => $bill]);
             }
 
             if ($user->role === 'manager') {
@@ -112,16 +107,10 @@ class PurchaseBillController extends Controller
                     ], 403);
                 }
 
-                return response()->json([
-                    'status' => true,
-                    'data' => $bill,
-                ]);
+                return response()->json(['status' => true, 'data' => $bill]);
             }
 
-            return response()->json([
-                'status' => false,
-                'message' => 'Unauthorized',
-            ], 403);
+            return response()->json(['status' => false, 'message' => 'Unauthorized'], 403);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
@@ -158,16 +147,19 @@ class PurchaseBillController extends Controller
             'bill_no' => [
                 'required',
                 'string',
-                \Illuminate\Validation\Rule::unique('purchase_bills')->where(fn ($q) => $q->where('supplier_id', $request->supplier_id)),
+                \Illuminate\Validation\Rule::unique('purchase_bills')->where(
+                    fn ($q) => $q->where('supplier_id', $request->supplier_id)
+                ),
             ],
             'bill_date' => 'required|date',
+            'is_lost' => 'sometimes|in:0,1',
             'lines' => 'required|array|min:1',
             'lines.*.product_id' => 'required|integer',
             'lines.*.qty' => 'required|numeric|min:0.0001',
             'lines.*.free_qty' => 'nullable|numeric|min:0',
             'lines.*.purchase_rate' => 'required|numeric|min:0',
-            'lines.*.mrp' => 'required|numeric|min:0', // Added for Batch Pricing
-            'lines.*.selling_price' => 'required|numeric|min:0', // Added for Batch Pricing
+            'lines.*.mrp' => 'required|numeric|min:0',
+            'lines.*.selling_price' => 'required|numeric|min:0',
             'lines.*.gst_rate_id' => 'required|integer',
             'lines.*.batch_no' => 'nullable|string',
             'lines.*.expiry_date' => 'nullable|date',
@@ -183,9 +175,10 @@ class PurchaseBillController extends Controller
             $storeId = $user->store_id;
             $supplier = Supplier::findOrFail($validated['supplier_id']);
 
-            // State logic for GST
             $branch = Branch::findOrFail($validated['branch_id']);
-            $originState = ($user->role === 'admin') ? Store::findOrFail($storeId)->state : $branch->state;
+            $originState = ($user->role === 'admin')
+                ? Store::findOrFail($storeId)->state
+                : $branch->state;
             $isIntra = ($originState === $supplier->state);
 
             $bill = PurchaseBill::create([
@@ -194,6 +187,7 @@ class PurchaseBillController extends Controller
                 'supplier_id' => $validated['supplier_id'],
                 'bill_no' => $validated['bill_no'],
                 'bill_date' => $validated['bill_date'],
+                'is_lost' => $validated['is_lost'] ?? 0,
                 'created_by' => $user->id,
             ]);
 
@@ -203,36 +197,28 @@ class PurchaseBillController extends Controller
                 $product = Product::findOrFail($lineData['product_id']);
                 $gst = GstRate::findOrFail($lineData['gst_rate_id']);
 
-                // Calculations
                 $qty = (float) $lineData['qty'];
                 $freeQty = (float) ($lineData['free_qty'] ?? 0);
                 $purchaseRate = (float) $lineData['purchase_rate'];
-                // $taxable = round(($qty * $purchaseRate) - ($lineData['discount'] ?? 0), 2);
+                $mrp = (float) $lineData['mrp'];
+                $sellingPrice = (float) $lineData['selling_price'];
 
                 $discount = isset($lineData['discount']) ? (float) $lineData['discount'] : 0.0;
                 $discountType = $lineData['discount_type'] ?? null;
 
                 $grossValue = round($qty * $purchaseRate, 2);
-
                 $discountAmount = ($discountType === 'percent')
-                ? round($grossValue * ($discount / 100), 2)
-                : round($discount, 2);
-
+                    ? round($grossValue * ($discount / 100), 2)
+                    : round($discount, 2);
                 $taxable = max(0, round($grossValue - $discountAmount, 2));
 
-                // GST Logic
                 $taxRate = $gst->rate;
                 $cgst = $isIntra ? round(($taxable * ($taxRate / 2)) / 100, 2) : 0;
                 $sgst = $isIntra ? round(($taxable * ($taxRate / 2)) / 100, 2) : 0;
                 $igst = ! $isIntra ? round(($taxable * $taxRate) / 100, 2) : 0;
 
                 $hasBatch = ! empty($lineData['batch_no']);
-
-                if ($hasBatch) {
-                    $batchNo = $lineData['batch_no'];
-                } else {
-                    $batchNo = $this->generateBatchNo($product->id);
-                }
+                $batchNo = $hasBatch ? $lineData['batch_no'] : $this->generateBatchNo($product->id);
 
                 $line = PurchaseLine::create([
                     'purchase_bill_id' => $bill->id,
@@ -240,6 +226,8 @@ class PurchaseBillController extends Controller
                     'qty' => $qty,
                     'free_qty' => $freeQty,
                     'purchase_rate' => $purchaseRate,
+                    'mrp' => $mrp,
+                    'selling_price' => $sellingPrice,
                     'taxable_value' => $taxable,
                     'cgst' => $cgst,
                     'sgst' => $sgst,
@@ -247,9 +235,10 @@ class PurchaseBillController extends Controller
                     'gst_rate_id' => $lineData['gst_rate_id'],
                     'discount_type' => $discountType,
                     'discount' => $discount,
-                    'hsn_code' => $product->hsn_code,
+                    'hsn_code' => $lineData['hsn_code'] ?? $product->hsn_code,
                     'batch_no' => $batchNo,
                     'expiry_date' => $lineData['expiry_date'] ?? null,
+                    'is_opening' => (int) ($lineData['is_opening'] ?? 0),
                 ]);
 
                 $existingBatch = null;
@@ -257,8 +246,8 @@ class PurchaseBillController extends Controller
                 if ($hasBatch) {
                     $existingBatch = Inventory::where('product_id', $product->id)
                         ->where('branch_id', $validated['branch_id'])
-                        ->where('selling_price', $lineData['selling_price'])
-                        ->where('mrp', $lineData['mrp'])
+                        ->where('selling_price', $sellingPrice)
+                        ->where('mrp', $mrp)
                         ->where('batch_no', $batchNo)
                         ->where('cost_price', $purchaseRate)
                         ->where('free', 0)
@@ -268,7 +257,6 @@ class PurchaseBillController extends Controller
                 if ($existingBatch) {
                     $existingBatch->increment('qty', $qty);
                     $batchBarcode = $existingBatch->batch_barcode;
-
                     $existingBatch->amount = $existingBatch->qty * $existingBatch->cost_price;
                     $existingBatch->save();
                 } else {
@@ -286,10 +274,11 @@ class PurchaseBillController extends Controller
                         'purchase_line_id' => $line->id,
                         'batch_barcode' => $batchBarcode,
                         'batch_no' => $batchNo,
-                        'mrp' => $lineData['mrp'],
-                        'selling_price' => $lineData['selling_price'],
+                        'mrp' => $mrp,
+                        'selling_price' => $sellingPrice,
                         'cost_price' => $purchaseRate,
                         'qty' => $qty,
+                        'sold_qty' => 0,
                         'free' => false,
                         'rate' => $purchaseRate,
                         'amount' => $qty * $purchaseRate,
@@ -304,8 +293,8 @@ class PurchaseBillController extends Controller
                     $existingFreeBatch = Inventory::where('product_id', $product->id)
                         ->where('branch_id', $validated['branch_id'])
                         ->where('batch_no', $batchNo)
-                        ->where('mrp', $lineData['mrp'])
-                        ->where('selling_price', $lineData['selling_price'])
+                        ->where('mrp', $mrp)
+                        ->where('selling_price', $sellingPrice)
                         ->where('cost_price', 0)
                         ->where('free', 1)
                         ->first();
@@ -320,10 +309,11 @@ class PurchaseBillController extends Controller
                             'purchase_line_id' => $line->id,
                             'batch_barcode' => $batchBarcode,
                             'batch_no' => $batchNo,
-                            'mrp' => $lineData['mrp'],
-                            'selling_price' => $lineData['selling_price'],
+                            'mrp' => $mrp,
+                            'selling_price' => $sellingPrice,
                             'cost_price' => 0,
                             'qty' => $freeQty,
+                            'sold_qty' => 0,
                             'free' => true,
                             'rate' => 0,
                             'amount' => 0,
@@ -333,7 +323,6 @@ class PurchaseBillController extends Controller
                     }
                 }
 
-                // ITC Entry
                 ItcEntry::create([
                     'purchase_bill_id' => $bill->id,
                     'purchase_line_id' => $line->id,
@@ -351,8 +340,7 @@ class PurchaseBillController extends Controller
                 $totals['igst'] += $igst;
             }
 
-            // Update Bill Totals
-            $totalTax = ($totals['cgst'] + $totals['sgst'] + $totals['igst']);
+            $totalTax = $totals['cgst'] + $totals['sgst'] + $totals['igst'];
 
             $bill->update([
                 'taxable_value' => $totals['taxable'],
@@ -360,7 +348,7 @@ class PurchaseBillController extends Controller
                 'sgst_amount' => $totals['sgst'],
                 'igst_amount' => $totals['igst'],
                 'total_tax' => $totalTax,
-                'total_amount' => ($totals['taxable'] + $totalTax),
+                'total_amount' => round($totals['taxable'] + $totalTax, 2),
                 'received' => true,
             ]);
 
@@ -378,17 +366,22 @@ class PurchaseBillController extends Controller
     {
         $request->validate([
             'supplier_id' => 'required|integer',
+            'bill_no' => 'sometimes|string',
             'bill_date' => 'required|date',
+            'is_lost' => 'sometimes|in:0,1',
             'lines' => 'required|array|min:1',
             'lines.*.product_id' => 'required|integer',
             'lines.*.qty' => 'required|numeric|min:0.0001',
             'lines.*.free_qty' => 'nullable|numeric|min:0',
             'lines.*.purchase_rate' => 'required|numeric|min:0',
+            'lines.*.mrp' => 'required|numeric|min:0',
+            'lines.*.selling_price' => 'required|numeric|min:0',
             'lines.*.gst_rate_id' => 'required|integer',
             'lines.*.batch_no' => 'nullable|string',
             'lines.*.expiry_date' => 'nullable|date',
             'lines.*.discount' => 'nullable|numeric|min:0',
             'lines.*.discount_type' => 'nullable|in:percent,fixed',
+            'lines.*.hsn_code' => 'nullable|string',
         ]);
 
         DB::beginTransaction();
@@ -398,9 +391,7 @@ class PurchaseBillController extends Controller
             $branchId = $bill->branch_id;
             $user = Auth::user();
 
-            // -----------------------------------------------------
-            // STEP 2: Delete only unsold inventory
-            // -----------------------------------------------------
+            // STEP 1: Delete only unsold inventory
             foreach ($bill->lines as $oldLine) {
                 Inventory::where('purchase_line_id', $oldLine->id)
                     ->where('sold_qty', 0)
@@ -411,41 +402,37 @@ class PurchaseBillController extends Controller
             PurchaseLine::where('purchase_bill_id', $bill->id)->delete();
             ItcEntry::where('purchase_bill_id', $bill->id)->delete();
 
-            // -----------------------------------------------------
-            // STEP 3: UPDATE BILL HEADER
-            // -----------------------------------------------------
+            // STEP 2: Update bill header
             $bill->update([
                 'supplier_id' => $request->supplier_id,
+                'bill_no' => $request->bill_no ?? $bill->bill_no,
                 'bill_date' => $request->bill_date,
+                'is_lost' => $request->is_lost ?? 0,
                 'updated_by' => $user->id,
             ]);
 
-            // -----------------------------------------------------
-            // STEP 4: CREATE NEW LINES + INVENTORY + ITC
-            // -----------------------------------------------------
+            // STEP 3: Create new lines + inventory + ITC
             $totalTaxable = $totalCgst = $totalSgst = $totalIgst = 0;
             $processedProducts = [];
 
             foreach ($request->lines as $line) {
-
                 $product = Product::findOrFail($line['product_id']);
+
                 $qty = (float) $line['qty'];
                 $freeQty = (float) ($line['free_qty'] ?? 0);
                 $rate = (float) $line['purchase_rate'];
+                $mrp = (float) $line['mrp'];
+                $sellingPrice = (float) $line['selling_price'];
                 $gstRateId = $line['gst_rate_id'];
 
                 $gstRate = optional(GstRate::find($gstRateId))->rate ?? 0;
-
-                // Discount
                 $discountType = $line['discount_type'] ?? null;
                 $discount = (float) ($line['discount'] ?? 0);
 
                 $gross = $qty * $rate;
-
                 $discountAmount = $discountType === 'percent'
                     ? round($gross * $discount / 100, 2)
                     : round($discount, 2);
-
                 $taxable = round(max(0, $gross - $discountAmount), 2);
 
                 // GST
@@ -465,7 +452,11 @@ class PurchaseBillController extends Controller
 
                 $totalGst = $cgst + $sgst + $igst;
 
-                // ------------------ Create Purchase Line ------------------
+                // Batch no
+                $hasBatch = ! empty($line['batch_no']);
+                $batchNo = $hasBatch ? $line['batch_no'] : $this->generateBatchNo($product->id);
+
+                // Create Purchase Line
                 $purchaseLine = PurchaseLine::create([
                     'purchase_bill_id' => $bill->id,
                     'product_id' => $product->id,
@@ -475,50 +466,66 @@ class PurchaseBillController extends Controller
                     'qty' => $qty,
                     'free_qty' => $freeQty,
                     'purchase_rate' => $rate,
+                    'mrp' => $mrp,
+                    'selling_price' => $sellingPrice,
                     'discount_type' => $discountType,
-                    'discount' => $discount,    // FIXED
-                    'amount' => $taxable,     // FIXED
+                    'discount' => $discount,
+                    'amount' => $taxable,
                     'cgst' => $cgst,
                     'sgst' => $sgst,
                     'igst' => $igst,
                     'total_gst' => $totalGst,
-                    'batch_no' => $line['batch_no'] ?? null,
+                    'batch_no' => $batchNo,
                     'expiry_date' => $line['expiry_date'] ?? null,
                 ]);
 
-                // ------------------ Inventory Entry for Normal QTY ------------------
+                // Barcode generation
+                $batchBarcode = $product->barcode;
+                if (Inventory::where('batch_barcode', $batchBarcode)->exists()) {
+                    $batchBarcode = $product->barcode.'-'.strtoupper(Str::random(4));
+                }
+
+                // Normal QTY Inventory
                 Inventory::create([
                     'product_id' => $product->id,
                     'branch_id' => $branchId,
                     'purchase_bill_id' => $bill->id,
                     'purchase_line_id' => $purchaseLine->id,
+                    'batch_barcode' => $batchBarcode,
+                    'batch_no' => $batchNo,
+                    'mrp' => $mrp,
+                    'selling_price' => $sellingPrice,
+                    'cost_price' => $rate,
                     'qty' => $qty,
                     'sold_qty' => 0,
                     'free' => 0,
                     'rate' => $rate,
-                    'amount' => $taxable,   // FIXED
-                    'batch_no' => $line['batch_no'] ?? null,
+                    'amount' => $taxable,
                     'expiry_date' => $line['expiry_date'] ?? null,
                 ]);
 
-                // ------------------ FREE QTY INVENTORY ------------------
+                // Free QTY Inventory
                 if ($freeQty > 0) {
                     Inventory::create([
                         'product_id' => $product->id,
                         'branch_id' => $branchId,
                         'purchase_bill_id' => $bill->id,
                         'purchase_line_id' => $purchaseLine->id,
-                        'qty' => $freeQty,   // FIXED
+                        'batch_barcode' => $batchBarcode,
+                        'batch_no' => $batchNo,
+                        'mrp' => $mrp,
+                        'selling_price' => $sellingPrice,
+                        'cost_price' => 0,
+                        'qty' => $freeQty,
                         'sold_qty' => 0,
                         'free' => 1,
                         'rate' => 0,
                         'amount' => 0,
-                        'batch_no' => $line['batch_no'] ?? null,
                         'expiry_date' => $line['expiry_date'] ?? null,
                     ]);
                 }
 
-                // ------------------ ITC ENTRY ------------------
+                // ITC Entry
                 ItcEntry::create([
                     'purchase_bill_id' => $bill->id,
                     'purchase_line_id' => $purchaseLine->id,
@@ -531,7 +538,6 @@ class PurchaseBillController extends Controller
                     'created_by' => $user->id,
                 ]);
 
-                // Accumulate totals
                 $totalTaxable += $taxable;
                 $totalCgst += $cgst;
                 $totalSgst += $sgst;
@@ -540,9 +546,7 @@ class PurchaseBillController extends Controller
                 $processedProducts[] = $product->id;
             }
 
-            // -----------------------------------------------------
-            // STEP 5: Update Bill Totals
-            // -----------------------------------------------------
+            // STEP 4: Update Bill Totals
             $totalTax = $totalCgst + $totalSgst + $totalIgst;
 
             $bill->update([
@@ -555,22 +559,21 @@ class PurchaseBillController extends Controller
                 'received' => 1,
             ]);
 
-            // -----------------------------------------------------
-            // STEP 6: UPDATE PRODUCT STOCK
-            // -----------------------------------------------------
+            // STEP 5: Update Product Stock
             foreach (array_unique($processedProducts) as $pid) {
                 $product = Product::find($pid);
 
-                // Calculate total stock including free
                 $totalQty = Inventory::where('product_id', $pid)->sum('qty');
-
-                // Calculate weighted average cost
                 $totalValue = Inventory::where('product_id', $pid)
-                    ->where('free', 0)      // only paid qty
+                    ->where('free', 0)
                     ->sum(DB::raw('qty * rate'));
 
+                $paidQty = Inventory::where('product_id', $pid)->where('free', 0)->sum('qty');
+
                 $product->stock = $totalQty;
-                $product->cost_price = $totalQty > 0 ? round($totalValue / max(1, $totalQty - Inventory::where('product_id', $pid)->where('free', 1)->sum('qty')), 2) : $product->cost_price;
+                $product->cost_price = $paidQty > 0
+                    ? round($totalValue / $paidQty, 2)
+                    : $product->cost_price;
                 $product->save();
             }
 
@@ -589,6 +592,30 @@ class PurchaseBillController extends Controller
                 'message' => 'Error updating purchase bill',
                 'error' => $e->getMessage(),
                 'line' => $e->getLine(),
+            ], 500);
+        }
+    }
+
+    public function destroy($id)
+    {
+        try {
+            $bill = PurchaseBill::findOrFail($id);
+
+            // Delete related records
+            PurchaseLine::where('purchase_bill_id', $id)->delete();
+            ItcEntry::where('purchase_bill_id', $id)->delete();
+            Inventory::where('purchase_bill_id', $id)->delete();
+
+            $bill->delete();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Purchase bill deleted successfully',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => $e->getMessage(),
             ], 500);
         }
     }

@@ -11,8 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('inventories', function (Blueprint $table) {
-            // $table->decimal('sold_qty', 10, 2)->default(0)->after('qty');
+        Schema::table('purchase_bills', function (Blueprint $table) {
+               $table->tinyInteger('is_lost')->default(0)->after('bill_date');
         });
     }
 
@@ -21,8 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('inventories', function (Blueprint $table) {
-            //
+        Schema::table('purchase_bills', function (Blueprint $table) {
+            $table->dropColumn('is_lost');
         });
     }
 };

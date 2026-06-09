@@ -12,8 +12,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('sales_bills', function (Blueprint $table) {
-            $table->string('last_idempotency_key')->nullable()->unique()->after('payment_status');
-        });
+        if (!Schema::hasColumn('sales_bills', 'last_idempotency_key_payment')) {
+            $table->string('last_idempotency_key_payment')->nullable()->after('last_idempotency_key_store');
+        }
+        // do same for any other columns added in this migration
+    });
     }
 
     /**
@@ -21,8 +24,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('sales_bills', function (Blueprint $table) {
-            //
-        });
+        // Schema::table('sales_bills', function (Blueprint $table) {
+        //     //
+        // });
     }
 };

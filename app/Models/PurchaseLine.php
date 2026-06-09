@@ -13,15 +13,20 @@ class PurchaseLine extends Model
         'qty',
         'free_qty',
         'purchase_rate',
+        'mrp',              // ✅ add
+        'selling_price',    // ✅ add
         'discount_type',
         'discount',
+        'amount',           // ✅ add
         'hsn_code',
         'batch_no',
         'expiry_date',
         'taxable_value',
         'cgst',
         'sgst',
-        'igst'
+        'igst',
+        'total_gst',        // ✅ add
+        'is_opening',       // ✅ add
     ];
 
     public function bill()

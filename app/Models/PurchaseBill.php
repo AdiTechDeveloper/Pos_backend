@@ -13,6 +13,7 @@ class PurchaseBill extends Model
         'bill_no',
         'bill_date',
         'taxable_value',
+        "is_lost",
         'cgst_amount',
         'sgst_amount',
         'igst_amount',

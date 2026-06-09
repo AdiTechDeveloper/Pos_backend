@@ -128,6 +128,7 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     Route::post('/purchase-bill', [PurchaseBillController::class, 'store']);
     Route::put('/purchase-bill/{id}', [PurchaseBillController::class, 'update']);
     Route::get('/purchase-line', [PurchaseLineController::class, 'index']);
+    Route::delete('purchase-bill/{id}', [PurchaseBillController::class, 'destroy']);
 });
 
 // Purchasebill return routes

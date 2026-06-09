@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Branch;
 use App\Models\SalesBill;
 use App\Models\SalesBillLine;
 use Carbon\Carbon;
@@ -81,12 +80,12 @@ class ReportController extends Controller
         }
 
         $query = SalesBillLine::query()
-            ->select(
+            ->select([
                 'product_id',
                 DB::raw('SUM(qty) as total_qty'),
                 DB::raw('SUM(amount) as total_sales'),
                 DB::raw('SUM(profit) as total_profit')
-            )
+           ] )
             ->with('product:id,name,sku');
 
         // ADMIN → only own store
@@ -113,153 +112,7 @@ class ReportController extends Controller
             ->get();
     }
 
-    // public function stockSummary(Request $request)
-    // {
-    //     $startDate = $request->start_date ?? now()->startOfMonth()->toDateString();
-    //     $endDate = $request->end_date ?? now()->endOfMonth()->toDateString();
-
-    //     $lastStart = \Carbon\Carbon::parse($startDate)->subMonth()->startOfMonth()->toDateString();
-    //     $lastEnd = \Carbon\Carbon::parse($startDate)->subMonth()->endOfMonth()->toDateString();
-
-    //     $perPage = $request->per_page ?? 10;
-
-    //     $query = DB::table('products as p')
-    //         ->selectRaw('
-    //         p.id as product_id,
-    //         p.name as product_name,
-    //         p.barcode as barcode,
-
-    //         -- Opening = Purchase Before - Sales Before
-    //         COALESCE(pur_before.total_purchase,0) - COALESCE(sal_before.total_sale,0) as opening_stock,
-
-    //         -- Purchased This Month
-    //         COALESCE(pur_month.total_purchase,0) as purchased,
-
-    //         -- Sold This Month
-    //         COALESCE(sal_month.total_sale,0) as sold,
-
-    //         -- Closing Stock
-    //         COALESCE(inv.stock,0) as closing_stock,
-
-    //         -- Last Month Sold
-    //         COALESCE(sal_last.total_sale,0) as last_month_sold
-    //     ')
-
-    //         // Filters
-    //         ->when($request->search, fn ($q) => $q->where('p.name', 'like', "%{$request->search}%")
-    //         )
-    //         ->when($request->product_id, fn ($q) => $q->where('p.id', $request->product_id)
-    //         )
-
-    //         // Purchase BEFORE
-    //         ->leftJoin(DB::raw("
-    //         (SELECT pl.product_id, SUM(pl.qty + pl.free_qty) as total_purchase
-    //          FROM purchase_lines pl
-    //          JOIN purchase_bills pb ON pb.id = pl.purchase_bill_id
-    //          WHERE pb.bill_date < '{$startDate}'
-    //          GROUP BY pl.product_id) as pur_before
-    //     "), 'pur_before.product_id', '=', 'p.id')
-
-    //         // Sales BEFORE
-    //         ->leftJoin(DB::raw("
-    //         (SELECT sl.product_id, SUM(sl.qty) as total_sale
-    //          FROM sales_bill_lines sl
-    //          JOIN sales_bills sb ON sb.id = sl.sales_bill_id
-    //          WHERE sb.created_at < '{$startDate}'
-    //          GROUP BY sl.product_id) as sal_before
-    //     "), 'sal_before.product_id', '=', 'p.id')
-
-    //         // Purchase THIS MONTH
-    //         ->leftJoin(DB::raw("
-    //         (SELECT pl.product_id, SUM(pl.qty + pl.free_qty) as total_purchase
-    //          FROM purchase_lines pl
-    //          JOIN purchase_bills pb ON pb.id = pl.purchase_bill_id
-    //          WHERE pb.bill_date BETWEEN '{$startDate}' AND '{$endDate}'
-    //          GROUP BY pl.product_id) as pur_month
-    //     "), 'pur_month.product_id', '=', 'p.id')
-
-    //         // Sales THIS MONTH
-    //         ->leftJoin(DB::raw("
-    //         (SELECT sl.product_id, SUM(sl.qty) as total_sale
-    //          FROM sales_bill_lines sl
-    //          JOIN sales_bills sb ON sb.id = sl.sales_bill_id
-    //          WHERE sb.created_at BETWEEN '{$startDate}' AND '{$endDate}'
-    //          GROUP BY sl.product_id) as sal_month
-    //     "), 'sal_month.product_id', '=', 'p.id')
-
-    //         // LAST MONTH
-    //         ->leftJoin(DB::raw("
-    //         (SELECT sl.product_id, SUM(sl.qty) as total_sale
-    //          FROM sales_bill_lines sl
-    //          JOIN sales_bills sb ON sb.id = sl.sales_bill_id
-    //          WHERE sb.created_at BETWEEN '{$lastStart}' AND '{$lastEnd}'
-    //          GROUP BY sl.product_id) as sal_last
-    //     "), 'sal_last.product_id', '=', 'p.id')
-
-    //         // INVENTORY (REAL STOCK)
-    //         ->leftJoin(DB::raw('
-    //         (SELECT product_id, SUM(qty - sold_qty - expired_qty) as stock
-    //          FROM inventories
-    //          GROUP BY product_id) as inv
-    //     '), 'inv.product_id', '=', 'p.id');
-
-    //     $products = $query->paginate($perPage);
-
-    //     // Add calculated fields (lightweight)
-    //     $data = collect($products->items())->map(function ($item) {
-
-    //         $totalAvailable = $item->opening_stock + $item->purchased;
-
-    //         $percentage = $totalAvailable > 0
-    //             ? round(($item->sold / $totalAvailable) * 100, 2)
-    //             : 0;
-
-    //         // Trend
-    //         if ($item->last_month_sold == 0 && $item->sold > 0) {
-    //             $trend = 'new';
-    //         } elseif ($item->sold > $item->last_month_sold) {
-    //             $trend = 'up';
-    //         } elseif ($item->sold < $item->last_month_sold) {
-    //             $trend = 'down';
-    //         } else {
-    //             $trend = 'same';
-    //         }
-
-    //         // Stock Health
-    //         $stockHealth = match (true) {
-    //             $item->closing_stock == 0 => 'out_of_stock',
-    //             $percentage > 70 => 'fast_moving',
-    //             $percentage < 10 => 'slow_moving',
-    //             default => 'normal',
-    //         };
-
-    //         return [
-    //             'product_id' => $item->product_id,
-    //             'product_name' => $item->product_name,
-    //             'barcode' => $item->barcode,
-    //             'opening_stock' => (float) $item->opening_stock,
-    //             'purchased' => (float) $item->purchased,
-    //             'sold' => (float) $item->sold,
-    //             'closing_stock' => (float) $item->closing_stock,
-    //             'sales_percentage' => $percentage,
-    //             'last_month_sold' => (float) $item->last_month_sold,
-    //             'trend' => $trend,
-    //             'stock_health' => $stockHealth,
-    //             'dead_stock' => ($item->sold == 0 && $item->closing_stock > 0),
-    //         ];
-    //     });
-
-    //     return response()->json([
-    //         'status' => true,
-    //         'data' => $data,
-    //         'pagination' => [
-    //             'current_page' => $products->currentPage(),
-    //             'last_page' => $products->lastPage(),
-    //             'per_page' => $products->perPage(),
-    //             'total' => $products->total(),
-    //         ],
-    //     ]);
-    // }
+    
 
     public function stockSummary(Request $request)
     {
@@ -443,130 +296,7 @@ class ReportController extends Controller
         ]);
     }
 
-    // public function purchaseSummary(Request $request)
-    // {
-    //     $storeId = Auth::user()->store_id;
-
-    //     // Inputs
-    //     $start = $request->start_date;
-    //     $end = $request->end_date;
-    //     $groupBy = $request->group_by ?? 'date';
-    //     $supplierId = $request->supplier_id;
-    //     $brandId = $request->brand_id;
-    //     $productId = $request->product_id;
-    //     $includeBills = $request->include_bills;
-
-    //     // BASE QUERY FOR REPORT
-    //     $query = DB::table('purchase_bills as pb')
-    //         ->join('purchase_lines as pl', 'pl.purchase_bill_id', '=', 'pb.id')
-    //         ->leftJoin('products as p', 'p.id', '=', 'pl.product_id')
-    //         ->leftJoin('gst_rates as g', 'g.id', '=', 'pl.gst_rate_id')
-    //         ->where('pb.store_id', $storeId)
-    //         ->whereBetween('pb.bill_date', [$start, $end]);
-
-    //     // Filters
-    //     if ($supplierId) {
-    //         $query->where('pb.supplier_id', $supplierId);
-    //     }
-    //     if ($brandId) {
-    //         $query->where('p.brand_id', $brandId);
-    //     }
-    //     if ($productId) {
-    //         $query->where('p.id', $productId);
-    //     }
-
-    //     // DYNAMIC GROUPING LOGIC
-    //     $labelIdCol = null;
-    //     switch ($groupBy) {
-    //         case 'brand':
-    //             $query->leftJoin('brands as b', 'b.id', '=', 'p.brand_id');
-    //             $labelCol = 'b.name';
-    //             $labelIdCol = 'b.id';
-    //             break;
-    //         case 'product':
-    //             $labelCol = 'p.name';
-    //             $labelIdCol = 'p.id';
-    //             break;
-    //         case 'supplier':
-    //             $query->leftJoin('suppliers as s', 's.id', '=', 'pb.supplier_id');
-    //             $labelCol = 's.name';
-    //             $labelIdCol = 'pb.supplier_id';
-    //             break;
-    //         case 'gst_rate':
-    //             $labelCol = 'g.rate';
-    //             $labelIdCol = 'g.id';
-    //             break;
-    //         default:
-    //             $labelCol = 'pb.bill_date';
-    //             $labelIdCol = null;
-    //     }
-
-    //     // EXECUTE AGGREGATED REPORT
-    //     // Note: total_amount is calculated from lines to avoid double-counting bill totals
-    //     $report = $query
-    //         ->selectRaw(($labelIdCol ? "$labelIdCol as label_id," : '')."COALESCE($labelCol, 'N/A') as label")
-    //         ->selectRaw('SUM(pl.qty) as total_qty')
-    //         ->selectRaw('ROUND(SUM(pl.taxable_value), 2) as total_taxable')
-    //         ->selectRaw('ROUND(SUM(pl.cgst + pl.sgst + pl.igst), 2) as total_gst')
-    //         ->selectRaw('ROUND(SUM(pl.cgst), 2) as total_cgst')
-    //         ->selectRaw('ROUND(SUM(pl.sgst), 2) as total_sgst')
-    //         ->selectRaw('ROUND(SUM(pl.igst), 2) as total_igst')
-    //         ->selectRaw('ROUND(SUM(pl.taxable_value + pl.cgst + pl.sgst + pl.igst), 2) as total_amount')
-    //         ->when($labelIdCol, function ($q) use ($labelIdCol, $labelCol) {
-    //             $q->groupBy($labelIdCol, $labelCol);
-    //         }, function ($q) use ($labelCol) {
-    //             $q->groupBy($labelCol);
-    //         })
-    //         ->orderBy('label', 'asc')
-    //         ->get();
-
-    //     // GST SLAB SUMMARY (Filtered by same criteria)
-    //     $taxSlabs = DB::table('purchase_lines as pl')
-    //         ->join('purchase_bills as pb', 'pb.id', '=', 'pl.purchase_bill_id')
-    //         ->leftJoin('gst_rates as g', 'g.id', '=', 'pl.gst_rate_id')
-    //         ->where('pb.store_id', $storeId)
-    //         ->whereBetween('pb.bill_date', [$start, $end])
-    //         ->when($supplierId, fn ($q) => $q->where('pb.supplier_id', $supplierId))
-    //         ->selectRaw('g.rate as slab_name, g.rate')
-    //         ->selectRaw('ROUND(SUM(pl.taxable_value), 2) as taxable')
-    //         ->selectRaw('ROUND(SUM(pl.cgst + pl.sgst + pl.igst), 2) as gst')
-    //         ->groupBy('g.id', 'g.rate', 'g.rate')
-    //         ->get();
-
-    //     // INDIVIDUAL BILLS (Optional detailed list)
-    //     $bills = [];
-    //     if ($includeBills) {
-    //         $bills = DB::table('purchase_bills as pb')
-    //             ->leftJoin('suppliers as s', 's.id', '=', 'pb.supplier_id')
-    //             ->where('pb.store_id', $storeId)
-    //             ->whereBetween('pb.bill_date', [$start, $end])
-    //             ->when($supplierId, fn ($q) => $q->where('pb.supplier_id', $supplierId))
-    //             ->select(
-    //                 'pb.id',
-    //                 'pb.bill_no',
-    //                 'pb.bill_date',
-    //                 'pb.taxable_value',
-    //                 'pb.total_tax',
-    //                 'pb.total_amount',
-    //                 's.name as supplier_name'
-    //             )
-    //             ->orderBy('pb.bill_date', 'desc')
-    //             ->limit(500)
-    //             ->get();
-    //     }
-
-    //     return response()->json([
-    //         'success' => true,
-    //         'meta' => [
-    //             'start_date' => $start,
-    //             'end_date' => $end,
-    //             'group_by' => $groupBy,
-    //         ],
-    //         'report' => $report,
-    //         'tax_slabs' => $taxSlabs,
-    //         'bills' => $bills,
-    //     ]);
-    // }
+   
 
     public function purchaseSummary(Request $request)
     {
