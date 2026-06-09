@@ -185,6 +185,9 @@ class SalesBillController extends Controller
             'lines.*.product_id' => 'required|integer',
             'lines.*.inventory_id' => 'required|integer', // From frontend popup
             'lines.*.qty' => 'required|numeric|min:0.01',
+            'lines.*.selling_price' => 'nullable|numeric|min:0',        // ← add
+            'lines.*.original_price' => 'nullable|numeric|min:0',       // ← add
+            'lines.*.is_price_overridden' => 'nullable|boolean',        // ← add
         ]);
 
         try {
@@ -240,7 +243,16 @@ class SalesBillController extends Controller
                     ->where('branch_id', $branchId)
                     ->firstOrFail();
                 $batchBarcode = $selectedInventory->batch_barcode;
-                $price = (float) $selectedInventory->selling_price;
+                // $price = (float) $selectedInventory->selling_price;
+                $inventoryPrice = (float) $selectedInventory->selling_price;
+                $isOverridden = ! empty($lineData['is_price_overridden']) && $lineData['is_price_overridden'] == true;
+                $price = $isOverridden && isset($lineData['selling_price'])
+                    ? (float) $lineData['selling_price']
+                    : $inventoryPrice;
+
+                $originalPrice = (float) ($lineData['original_price'] ?? $inventoryPrice);
+                $overridePrice = $isOverridden ? $price : null;
+
                 $mrp = (float) $selectedInventory->mrp;
 
                 if ($selectedInventory->qty <= $selectedInventory->sold_qty) {
@@ -341,6 +353,10 @@ class SalesBillController extends Controller
                     'inventory_id' => $selectedInventory->id,
                     'qty' => $requiredQty,
                     'rate' => $price,
+                    'selling_price' => $price,
+                    'original_price' => $originalPrice,
+                    'override_price' => $overridePrice,
+                    'is_price_overridden' => $isOverridden ? 1 : 0,
                     'taxable_amount' => $taxable,
                     'amount' => $lineAmount,
                     'cgst' => $cgst,
@@ -350,6 +366,22 @@ class SalesBillController extends Controller
                     'cogs' => $totalLineCogs,
                     'profit' => $profit,
                 ]);
+
+                // Log price override for audit report
+                if ($isOverridden) {
+                    \App\Models\PriceOverride::create([
+                        'sale_bill_id' => $bill->id,
+                        'sale_bill_line_id' => $salesLine->id,
+                        'product_id' => $product->id,
+                        'branch_id' => $branchId,
+                        'original_price' => $originalPrice,
+                        'override_price' => $price,
+                        'difference' => round($originalPrice - $price, 2),
+                        'qty' => $requiredQty,
+                        'total_loss' => round(($originalPrice - $price) * $requiredQty, 2),
+                        'overridden_by' => $user->id,
+                    ]);
+                }
 
                 // GST Ledger Entry
                 if ($totalLineGst > 0) {
@@ -517,7 +549,12 @@ class SalesBillController extends Controller
         // If you want multiple bills print data:
         $response = $bills->map(function ($bill) {
             $items = $bill->lines->map(function ($line) {
-                $sellingPrice = $line->inventory->selling_price ?? $line->product->selling_price;
+                // Use override price if overridden, else inventory price
+                $sellingPrice = $line->is_price_overridden && $line->override_price
+                    ? $line->override_price
+                    : ($line->inventory->selling_price ?? $line->product->selling_price);
+
+                $originalPrice = $line->original_price ?? $sellingPrice;
                 $mrp = $line->inventory->mrp ?? $line->product->mrp;
 
                 return [
@@ -525,6 +562,9 @@ class SalesBillController extends Controller
                     'qty' => $line->qty,
                     'mrp' => round($mrp, 2),
                     'selling' => round($sellingPrice, 2),
+                    'original_price' => round($line->original_price ?? $sellingPrice, 2), // ← add
+                    'is_price_overridden' => (bool) $line->is_price_overridden,
+                    'is_price_overridden' => (bool) $line->is_price_overridden, // ← add               // ← add
                     'amount' => $line->amount,
                     'saved' => ($line->product->mrp - $line->product->selling_price) * $line->qty,
                     'cgst' => $line->cgst,
