@@ -194,9 +194,9 @@ class SalesBillController extends Controller
             'payment_type' => 'required|in:cash,online,split,credit',
             'cash_received' => 'nullable|numeric|min:0',
             'balance_return' => 'nullable|numeric|min:0',
-            'lines.*.selling_price' => 'nullable|numeric|min:0',        
-            'lines.*.original_price' => 'nullable|numeric|min:0',       
-            'lines.*.is_price_overridden' => 'nullable|boolean',       
+            'lines.*.selling_price' => 'nullable|numeric|min:0',
+            'lines.*.original_price' => 'nullable|numeric|min:0',
+            'lines.*.is_price_overridden' => 'nullable|boolean',
         ]);
 
         try {
@@ -807,6 +807,114 @@ class SalesBillController extends Controller
             return response()->json([
                 'status' => false,
                 'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    private function processBillPayment($bill, $amount, $method, $transaction_id = null, $gateway = null)
+    {
+        if ($amount <= 0) {
+            throw new \Exception('Invalid payment amount');
+        }
+
+        if ($amount > $bill->due_amount) {
+            throw new \Exception('Payment exceeds due amount for bill ID: '.$bill->id);
+        }
+
+        // Insert payment record
+        SalesBillPayment::create([
+            'sales_bill_id' => $bill->id,
+            'method' => $method,
+            'amount' => $amount,
+            'transaction_id' => $transaction_id,
+            'gateway' => $gateway,
+            'status' => 'success',
+            'payment_phase' => 'collection',
+        ]);
+
+        // Update bill
+        $bill->paid_amount += $amount;
+        $bill->due_amount -= $amount;
+
+        if ($bill->due_amount == 0) {
+            $bill->payment_status = 'paid';
+            $bill->bill_status = 'completed';
+        } else {
+            $bill->payment_status = 'partial';
+        }
+
+        $bill->save();
+    }
+
+    public function customerPayDue(Request $request)
+    {
+        $request->validate([
+            'customer_id' => 'required|exists:customers,id',
+            'amount' => 'required|numeric|min:0.01',
+            'method' => 'required|string',
+            'transaction_id' => 'nullable|string',
+            'gateway' => 'nullable|string',
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            $remaining = $request->amount;
+
+            $bills = SalesBill::where('customer_id', $request->customer_id)
+                ->where('due_amount', '>', 0)
+                ->orderBy('created_at')
+                ->lockForUpdate()
+                ->get();
+
+            if ($bills->isEmpty()) {
+                throw new \Exception('No pending dues for this customer');
+            }
+
+            $paymentBreakdown = [];
+
+            foreach ($bills as $bill) {
+                if ($remaining <= 0) {
+                    break;
+                }
+
+                $payAmount = min($remaining, $bill->due_amount);
+
+                $this->processBillPayment(
+                    $bill,
+                    $payAmount,
+                    $request->method,
+                    $request->transaction_id,
+                    $request->gateway
+                );
+
+                $paymentBreakdown[] = [
+                    'bill_id' => $bill->id,
+                    'paid' => $payAmount,
+                    'remaining_due' => $bill->due_amount,
+                ];
+
+                $remaining -= $payAmount;
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Customer due paid successfully',
+                'data' => [
+                    'total_paid' => $request->amount - $remaining,
+                    'remaining_amount' => $remaining,
+                    'breakdown' => $paymentBreakdown,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => false,
+                'message' => $e->getMessage(),
             ], 500);
         }
     }

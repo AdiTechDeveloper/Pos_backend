@@ -7,13 +7,13 @@ use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\GSTOutputReportController;
 use App\Http\Controllers\Api\GstRateController;
 use App\Http\Controllers\Api\ManagerBranchController;
+use App\Http\Controllers\Api\PriceOverrideController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PurchaseBillController;
 use App\Http\Controllers\Api\PurchaseLineController;
 use App\Http\Controllers\Api\PurchaseReturnController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SalesBillController;
-use App\Http\Controllers\Api\PriceOverrideController;
 use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\StockAlertController;
 use App\Http\Controllers\Api\StockExpiryController;
@@ -27,6 +27,10 @@ Route::post('/login', [AuthController::class, 'login']);
 // store registration route
 Route::post('/stores', [StoreController::class, 'store']);
 Route::get('/stores/{id}', [StoreController::class, 'show']);
+
+Route::middleware(['auth:sanctum', 'token.expiry'])->group(function () {
+    Route::post('/logout', [AuthController::class, 'logout']);
+});
 
 // stores routes for superadmin users
 Route::middleware(['auth:sanctum', 'token.expiry', 'check.superadmin'])->group(function () {
@@ -157,6 +161,8 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     Route::get('/customer/due', [SalesBillController::class, 'customerWithDue']);
     Route::get('/customer-due/{customerMobile}', [SalesBillController::class, 'customerDue']);
     Route::post('/sales-bill/print-data', [SalesBillController::class, 'getPrintData']);
+
+    Route::post('/sales-bills/customer-pay-due', [SalesBillController::class, 'customerPayDue']);
 });
 
 // Report routes
@@ -169,14 +175,12 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     Route::post('/reports/purchase', [ReportController::class, 'purchaseSummary']);
     Route::post('/reports/sales-summary', [ReportController::class, 'salesSummary']);
     Route::post('/reports/sales-analytics', [ReportController::class, 'salesAnalytics']);
-       Route::get('price-override-report', [PriceOverrideController::class, 'index']);
+    Route::get('price-override-report', [PriceOverrideController::class, 'index']);
 
     // GST reports
     Route::post('/reports/gst/sales-GST', [GSTOutputReportController::class, 'gstOutputReport']);
     Route::post('/reports/gst/gstr3b-Summary', [GSTOutputReportController::class, 'gstr3bSummary']);
     Route::post('/reports/gst/gstr1-Summary', [GSTOutputReportController::class, 'gstr1Summary']);
-
-    
 
 });
 

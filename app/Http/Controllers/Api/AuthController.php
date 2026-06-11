@@ -15,14 +15,14 @@ class AuthController extends Controller
         $request->validate([
             'username' => 'required_without:pin|string',
             'password' => 'required_without:pin|string',
-            'pin' => 'required_without_all:username,password|string'
+            'pin' => 'required_without_all:username,password|string',
         ]);
 
         // Cashier login (PIN based)
         if ($request->has('pin')) {
             $user = User::where('role', 'cashier')->where('is_active', true)->first();
 
-            if (!$user || !Hash::check($request->pin, $user->pin_hash)) {
+            if (! $user || ! Hash::check($request->pin, $user->pin_hash)) {
                 return response()->json(['message' => 'Invalid cashier PIN'], 401);
             }
         }
@@ -32,7 +32,7 @@ class AuthController extends Controller
                 ->where('is_active', true)
                 ->first();
 
-            if (!$user || !Hash::check($request->password, $user->password)) {
+            if (! $user || ! Hash::check($request->password, $user->password)) {
                 return response()->json(['message' => 'Invalid credentials'], 401);
             }
         }
@@ -53,10 +53,17 @@ class AuthController extends Controller
                 'role' => $user->role,
                 'store_id' => $user->store_id,
                 'branch_ids' => $user->branches()->pluck('branches.id'),
-                'is_active' => $user->is_active
+                'is_active' => $user->is_active,
             ],
             'token' => $plainTextToken,
             'expires_at' => $expiry->toDateTimeString(),
         ]);
+    }
+
+    public function logout(Request $request)
+    {
+        $request->user()->currentAccessToken()->delete();
+
+        return response()->json(['message' => 'Logged out successfully']);
     }
 }
