@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\PurchaseLineController;
 use App\Http\Controllers\Api\PurchaseReturnController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SalesBillController;
+use App\Http\Controllers\Api\SalesReportController;
 use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\StockAlertController;
 use App\Http\Controllers\Api\StockExpiryController;
@@ -182,6 +183,7 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     Route::post('/reports/gst/gstr3b-Summary', [GSTOutputReportController::class, 'gstr3bSummary']);
     Route::post('/reports/gst/gstr1-Summary', [GSTOutputReportController::class, 'gstr1Summary']);
 
+    Route::get('/reports/sales-report', [SalesReportController::class, 'index']);
 });
 
 // admin reports
