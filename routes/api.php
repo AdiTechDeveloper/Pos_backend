@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\PriceOverrideController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PurchaseBillController;
 use App\Http\Controllers\Api\PurchaseLineController;
+use App\Http\Controllers\Api\PurchaseReportController;
 use App\Http\Controllers\Api\PurchaseReturnController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SalesBillController;
@@ -184,6 +185,7 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     Route::post('/reports/gst/gstr1-Summary', [GSTOutputReportController::class, 'gstr1Summary']);
 
     Route::get('/reports/sales-report', [SalesReportController::class, 'index']);
+    Route::get('/reports/purchase-report', [PurchaseReportController::class, 'index']);
 });
 
 // admin reports
