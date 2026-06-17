@@ -3,9 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Inventory extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = [
         'product_id',
         'branch_id',
@@ -46,6 +49,6 @@ class Inventory extends Model
 
     public function line()
     {
-        return $this->belongsTo(PurchaseLine::class, 'id');
+        return $this->belongsTo(PurchaseLine::class, 'purchase_line_id');
     }
 }

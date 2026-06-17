@@ -3,9 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class PurchaseLine extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = [
         'purchase_bill_id',
         'product_id',
@@ -13,11 +16,11 @@ class PurchaseLine extends Model
         'qty',
         'free_qty',
         'purchase_rate',
-        'mrp',              // ✅ add
-        'selling_price',    // ✅ add
+        'mrp',
+        'selling_price',
         'discount_type',
         'discount',
-        'amount',           // ✅ add
+        'amount',
         'hsn_code',
         'batch_no',
         'expiry_date',
@@ -25,8 +28,8 @@ class PurchaseLine extends Model
         'cgst',
         'sgst',
         'igst',
-        'total_gst',        // ✅ add
-        'is_opening',       // ✅ add
+        'total_gst',
+        'is_opening',
     ];
 
     public function bill()

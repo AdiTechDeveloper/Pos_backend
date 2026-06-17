@@ -3,9 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class PurchaseBill extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = [
         'store_id',
         'branch_id',
@@ -13,7 +16,7 @@ class PurchaseBill extends Model
         'bill_no',
         'bill_date',
         'taxable_value',
-        "is_lost",
+        'is_lost',
         'cgst_amount',
         'sgst_amount',
         'igst_amount',
@@ -22,10 +25,14 @@ class PurchaseBill extends Model
         'total_amount',
         'received',
         'created_by',
-        'updated_by'
+        'updated_by',
+        'tax_type',
+        'settlement_amount',
+        'notes',
+        'deleted_by',
     ];
 
-     public function store()
+    public function store()
     {
         return $this->belongsTo(Store::class);
     }
@@ -43,5 +50,32 @@ class PurchaseBill extends Model
     public function supplier()
     {
         return $this->belongsTo(Supplier::class);
+    }
+
+    public function itcEntries()
+    {
+        return $this->hasMany(ItcEntry::class);
+    }
+
+    public function inventory()
+    {
+        return $this->hasMany(Inventory::class);
+    }
+
+    protected static function booted()
+    {
+        static::deleting(function ($bill) {
+            if (! $bill->isForceDeleting()) {
+                $bill->lines()->delete();
+                $bill->itcEntries()->delete();
+                $bill->inventory()->delete();
+            }
+        });
+
+        static::restoring(function ($bill) {
+            $bill->lines()->withTrashed()->restore();
+            $bill->itcEntries()->withTrashed()->restore();
+            $bill->inventory()->withTrashed()->restore();
+        });
     }
 }

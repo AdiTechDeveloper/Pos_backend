@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\BrandController;
 use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\FinancialReportController;
 use App\Http\Controllers\Api\GSTOutputReportController;
 use App\Http\Controllers\Api\GstRateController;
 use App\Http\Controllers\Api\ManagerBranchController;
@@ -186,6 +187,7 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
 
     Route::get('/reports/sales-report', [SalesReportController::class, 'index']);
     Route::get('/reports/purchase-report', [PurchaseReportController::class, 'index']);
+    Route::get('/reports/financial-report', [FinancialReportController::class, 'index']);
 });
 
 // admin reports

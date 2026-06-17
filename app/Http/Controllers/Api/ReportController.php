@@ -112,8 +112,6 @@ class ReportController extends Controller
             ->get();
     }
 
-    
-
     public function stockSummary(Request $request)
     {
         $user = Auth::user();
@@ -295,8 +293,6 @@ class ReportController extends Controller
             ],
         ]);
     }
-
-   
 
     public function purchaseSummary(Request $request)
     {

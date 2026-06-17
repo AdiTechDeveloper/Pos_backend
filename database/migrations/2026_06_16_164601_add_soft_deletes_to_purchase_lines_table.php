@@ -11,8 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('purchase_bills', function (Blueprint $table) {
-               $table->tinyInteger('is_lost')->default(0)->after('bill_date');
+        Schema::table('purchase_lines', function (Blueprint $table) {
+            $table->softDeletes(); // Creates 'deleted_at'
         });
     }
 
@@ -21,8 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('purchase_bills', function (Blueprint $table) {
-            $table->dropColumn('is_lost');
+        Schema::table('purchase_lines', function (Blueprint $table) {
+            $table->dropSoftDeletes();
         });
     }
 };
