@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use App\Models\RegisterShift;
 use Illuminate\Support\Facades\Hash;
 
 class AuthController extends Controller
@@ -59,6 +60,8 @@ class AuthController extends Controller
             'expires_at' => $expiry->toDateTimeString(),
         ]);
     }
+
+    
 
     public function logout(Request $request)
     {

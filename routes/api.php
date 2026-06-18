@@ -24,6 +24,13 @@ use App\Http\Controllers\Api\StoreController;
 use App\Http\Controllers\Api\SupplierController;
 use Illuminate\Support\Facades\Route;
 
+// Put this at the very top of api.php, outside any groups
+Route::get('/staff/register-status', [App\Http\Controllers\Api\StaffController::class, 'getRegisterStatus'])
+     ->middleware('auth:sanctum');
+     Route::get('/staff/shift-summary', [StaffController::class, 'getShiftSummary'])->middleware('auth:sanctum');
+Route::post('/staff/close-register', [StaffController::class, 'closeRegister'])->middleware('auth:sanctum');
+Route::post('/open-register',  [StaffController::class, 'openRegister'])->middleware('auth:sanctum');
+
 // login route
 Route::post('/login', [AuthController::class, 'login']);
 
@@ -66,6 +73,14 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response', 'check.a
     Route::put('/staff/{id}', [StaffController::class, 'update']);
     Route::delete('/staff/{id}', [StaffController::class, 'destroy']);
     Route::patch('/staff/{id}/toggle-status', [StaffController::class, 'toggleActive']);
+    
+});
+
+
+// --- TEST GROUP ---
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('/staff/register-status', [StaffController::class, 'getRegisterStatus']);
+    Route::post('/staff/open-register', [StaffController::class, 'openRegister']);
 });
 
 // manager routes
@@ -200,4 +215,9 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
 
 Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(function () {
     Route::get('/stock-alerts', [StockAlertController::class, 'index']);
+});
+
+ Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('/staff/register-status', [StaffController::class, 'getRegisterStatus']);
+    Route::post('/staff/open-register', [StaffController::class, 'openRegister']);
 });

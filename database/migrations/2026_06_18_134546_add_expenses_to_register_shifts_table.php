@@ -11,10 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('inventories', function (Blueprint $table) {
-            $table->decimal('expired_qty', 10, 2)->default(0)->after('sold_qty');
-            $table->timestamp('expired_at')->nullable()->after('expired_qty');
-        });
+        Schema::table('register_shifts', function (Blueprint $table) {
+            //
+              $table->decimal('other_expenses', 10, 2)->default(0)->after('expected_closing_balance');
+        $table->string('expense_description')->nullable()->after('other_expenses');
+    });
+        
     }
 
     /**
@@ -22,7 +24,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('inventories', function (Blueprint $table) {
+        Schema::table('register_shifts', function (Blueprint $table) {
             //
         });
     }

@@ -12,11 +12,11 @@ class SalesBillPayment extends Model
         'amount',
         'transaction_id',
         'gateway',
-        'status'
+        'status',
     ];
 
-    public function bill()
+    public function salesBill()
     {
-        return $this->belongsTo(SalesBill::class, 'sales_bill_id');
+        return $this->belongsTo(\App\Models\SalesBill::class, 'sales_bill_id');
     }
 }
