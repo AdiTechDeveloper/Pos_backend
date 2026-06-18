@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\PurchaseReturnController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SalesBillController;
 use App\Http\Controllers\Api\SalesReportController;
+use App\Http\Controllers\Api\SalesReturnController;
 use App\Http\Controllers\Api\StaffController;
 use App\Http\Controllers\Api\StockAlertController;
 use App\Http\Controllers\Api\StockExpiryController;
@@ -171,6 +172,11 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     // Product scan (used by POS)
     Route::post('/sales/scan', [SalesBillController::class, 'scanBarcode']);
     Route::post('/sales-bills', [SalesBillController::class, 'store']);
+
+    // Sales return
+    Route::get('/sales-bills/lookup', [SalesReturnController::class, 'lookupBill']);
+    Route::post('/sales-bill/return', [SalesReturnController::class, 'processReturn']);
+    
     // gst report
     Route::get('/sales-bills/gst-report', [SalesBillController::class, 'gstReport']);
     // Payment method
