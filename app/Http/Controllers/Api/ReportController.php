@@ -171,7 +171,6 @@ class ReportController extends Controller
                     ->where('i.branch_id', $branchId);
             });
         }
-
         // Purchase BEFORE
         $query->leftJoin(DB::raw('(
         SELECT pl.product_id, SUM(pl.qty + pl.free_qty) AS total_purchase

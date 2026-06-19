@@ -13,20 +13,25 @@ class RegisterShift extends Model
     protected $table = 'register_shifts';
 
     // Allow these fields to be filled via the controller
-    protected $fillable = [
-        'branch_id',
-        'user_id',
-        'opening_balance',
-        'closing_balance',
-        'status',
-        'opened_at',
-        'closed_at'
-    ];
+   protected $fillable = [
+    'branch_id',
+    'user_id',
+    'opening_balance',
+    'closing_balance',
+    'status',
+    'opened_at',
+    'closed_at',
+    'cash_collected',
+    'expected_closing_balance',
+    'other_expenses',
+    'expense_description',  
+    'discrepancy',
+];
 
     // Relationship: A shift belongs to a user (staff/cashier)
     public function user()
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(\App\Models\User::class, 'user_id');
     }
 
     // Relationship: A shift belongs to a branch

@@ -51,6 +51,24 @@ class StaffController extends Controller
         return response()->json(['active' => $activeShift]);
     }
 
+   public function shiftHistory(Request $request)
+{
+    $user = $request->user();
+    if (!$user) return response()->json(['message' => 'Unauthenticated'], 401);
+    if (!in_array($user->role, ['admin', 'manager']))
+        return response()->json(['message' => 'Forbidden'], 403);
+
+    $query = RegisterShift::with('user:id,name,username')
+        ->where('status', 'closed')
+        ->orderBy('closed_at', 'desc');
+
+    if ($request->from_date)  $query->whereDate('opened_at', '>=', $request->from_date);
+    if ($request->to_date)    $query->whereDate('opened_at', '<=', $request->to_date);
+    if ($request->cashier_id) $query->where('user_id', $request->cashier_id);
+
+    return response()->json(['data' => $query->get()]);
+}
+
     public function openRegister(Request $request)
     {
         $request->validate(['opening_balance' => 'required|numeric']);
@@ -125,7 +143,7 @@ if (!$user) {
         ]);
     }
 
-    public function closeRegister(Request $request)
+   public function closeRegister(Request $request)
 {
     $request->validate([
         'closing_balance'     => 'required|numeric',
@@ -149,20 +167,22 @@ if (!$user) {
         return response()->json(['message' => 'No open shift found for this user'], 404);
     }
 
-  // In getShiftSummary — replace the $cashCollected query with:
-$cashCollected = SalesBillPayment::where('method', 'cash')
-    ->where('status', 'success')
-  ->whereDate('created_at', today())          // ← only today's payments
-    ->whereHas('salesBill', function ($query) use ($branchId) {
-        $query->where('branch_id', $branchId);  // ← was user_id, now branch_id
-    })
-    ->sum('amount');
+    // Cash collected during THIS shift's window (opened_at -> now), not just "today".
+    // This matters if a shift spans midnight or is closed late.
+    $cashCollected = SalesBillPayment::where('method', 'cash')
+        ->where('status', 'success')
+        ->whereBetween('created_at', [$shift->opened_at, now()])
+        ->whereHas('salesBill', function ($query) use ($branchId) {
+            $query->where('branch_id', $branchId);
+        })
+        ->sum('amount');
 
     $otherExpenses           = (float) ($request->other_expenses ?? 0);
     $expectedClosingBalance  = (float) $shift->opening_balance + (float) $cashCollected - $otherExpenses;
     $discrepancy             = (float) $request->closing_balance - $expectedClosingBalance;
 
     $shift->update([
+        'cash_collected'           => $cashCollected,
         'closing_balance'          => $request->closing_balance,
         'expected_closing_balance' => $expectedClosingBalance,
         'other_expenses'           => $otherExpenses,
@@ -174,54 +194,13 @@ $cashCollected = SalesBillPayment::where('method', 'cash')
 
     return response()->json([
         'message'                  => 'Register closed successfully',
+        'cash_collected'           => (float) $cashCollected,
         'expected_closing_balance' => $expectedClosingBalance,
         'actual_closing_balance'   => (float) $request->closing_balance,
         'other_expenses'           => $otherExpenses,
         'discrepancy'              => $discrepancy,
     ]);
 }
-
-    public function store(Request $request)
-    {
-        try {
-            $user = Auth::user();
-            if (!in_array($user->role, ['admin', 'manager'])) {
-                return response()->json(['message' => 'Forbidden'], 403);
-            }
-
-            $validator = Validator::make($request->all(), [
-                'name' => 'required|string|max:255',
-                'username' => 'required|string|max:255|unique:users,username',
-                'role' => 'required|in:manager,cashier',
-                'pin' => 'nullable|required_if:role,cashier|digits:4',
-                'branch_ids' => 'required|array|min:1',
-                'branch_ids.*' => 'exists:branches,id',
-            ]);
-
-            if ($validator->fails()) {
-                return response()->json(['status' => false, 'errors' => $validator->errors()], 422);
-            }
-
-            $data = $validator->validated();
-            $sPassword = '123456';
-
-            $staff = User::create([
-                'store_id' => $user->store_id,
-                'name' => $data['name'],
-                'username' => $data['username'],
-                'role' => $data['role'],
-                'password' => $data['role'] !== 'cashier' ? Hash::make($sPassword) : null,
-                'pin_hash' => $data['role'] === 'cashier' ? Hash::make($data['pin']) : null,
-                'created_by' => $user->id,
-            ]);
-
-            $staff->branches()->sync($data['branch_ids']);
-
-            return response()->json(['status' => true, 'message' => 'Staff created', 'data' => $staff->load('branches')], 201);
-        } catch (\Exception $e) {
-            return response()->json(['status' => false, 'message' => 'Error creating staff', 'error' => $e->getMessage()], 500);
-        }
-    }
 
     public function update(Request $request, $id)
     {
