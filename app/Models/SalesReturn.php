@@ -44,6 +44,6 @@ class SalesReturn extends Model
 
     public function returnLines()
     {
-        return $this->belongsTo(SalesReturnLine::class, 'sales_return_id', 'id');
+        return $this->hasMany(SalesReturnLine::class, 'sales_return_id', 'id');
     }
 }

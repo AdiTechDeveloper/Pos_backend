@@ -13,6 +13,46 @@ use Illuminate\Support\Facades\DB;
 
 class SalesReturnController extends Controller
 {
+    public function index()
+    {
+        $user = Auth::user();
+
+        try {
+            $query = SalesReturn::with([
+                'store', 'branch', 'salesBill', 'customer', 'returnLines',
+            ])->orderBy('id', 'desc');
+
+            if ($user->role === 'cashier') {
+                $query->where('user_id', $user->id);
+            } elseif ($user->role === 'manager') {
+                $branchIds = $user->branches->pluck('id')->toArray();
+
+                if (! empty($branchIds)) {
+                    $query->whereIn('branch_id', $branchIds);
+                } else {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'No branch assigned to this manager.',
+                    ], 400);
+                }
+            }
+
+            $bills = $query->get();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Sales return bills fetched successfully',
+                'data' => $bills,
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
     public function lookupBill(Request $request)
     {
         $request->validate([
