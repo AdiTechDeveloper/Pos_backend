@@ -49,7 +49,6 @@ class ReportController extends Controller
             if ($request->filled('branch_id')) {
                 $query->where('branch_id', $request->branch_id);
             }
-            // else: admin sees ALL branches (no filter)
         }
 
         // Aggregation
@@ -84,8 +83,8 @@ class ReportController extends Controller
                 'product_id',
                 DB::raw('SUM(qty) as total_qty'),
                 DB::raw('SUM(amount) as total_sales'),
-                DB::raw('SUM(profit) as total_profit')
-           ] )
+                DB::raw('SUM(profit) as total_profit'),
+            ])
             ->with('product:id,name,sku');
 
         // ADMIN → only own store
