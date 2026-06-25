@@ -17,25 +17,50 @@ class StaffController extends Controller
     public function index(Request $request)
     {
         try {
-            if (! in_array($request->user()->role, ['admin', 'manager'])) {
+            $user = $request->user();
+            $role = strtolower(trim($user->role));
+
+            if (! in_array($role, ['admin', 'manager'])) {
                 return response()->json(['message' => 'Forbidden'], 403);
             }
 
-            $staff = User::where('store_id', $request->user()->store_id)
-                ->whereIn('role', ['manager', 'cashier'])
-                ->with('store', 'branches')
-                ->get();
+            if ($role === 'admin') {
+                $staff = User::where('store_id', $user->store_id)
+                    ->whereIn('role', ['manager', 'cashier'])
+                    ->with('store', 'branches')
+                    ->get();
+            }
 
-            return response()->json(['status' => true, 'data' => $staff], 200);
+            if ($role === 'manager') {
+                $branchIds = $user->branches()->pluck('branches.id');
+
+                $staff = User::where('store_id', $user->store_id)
+                    ->where('role', 'cashier')
+                    ->whereHas('branches', function ($q) use ($branchIds) {
+                        $q->whereIn('branches.id', $branchIds);
+                    })
+                    ->with('store', 'branches')
+                    ->get();
+            }
+
+            return response()->json([
+                'status' => true,
+                'data' => $staff,
+            ]);
+
         } catch (\Exception $e) {
-            return response()->json(['status' => false, 'message' => 'Error fetching staff', 'error' => $e->getMessage()], 500);
+            return response()->json([
+                'status' => false,
+                'message' => 'Error fetching staff',
+                'error' => $e->getMessage(),
+            ], 500);
         }
     }
 
     public function store(Request $request)
     {
         try {
-              $user = Auth::user();
+            $user = Auth::user();
             if (! in_array($request->user()->role, ['admin', 'manager'])) {
                 return response()->json(['message' => 'Forbidden'], 403);
             }
@@ -46,13 +71,13 @@ class StaffController extends Controller
                 'role' => 'required|in:manager,cashier',
                 'pin' => 'nullable|required_if:role,cashier|digits:4',
                 'branch_ids' => 'required|array|min:1',
-                'branch_ids.*' => 'exists:branches,id'
+                'branch_ids.*' => 'exists:branches,id',
             ]);
 
             if ($validator->fails()) {
                 return response()->json(['status' => false, 'errors' => $validator->errors()], 422);
             }
-               if ($request->role === 'cashier') {
+            if ($request->role === 'cashier') {
                 $existingCashiers = User::where('store_id', $user->store_id)
                     ->where('role', 'cashier')
                     ->whereNotNull('pin_hash')
@@ -62,7 +87,7 @@ class StaffController extends Controller
                     if (Hash::check($request->pin, $cashier->pin_hash)) {
                         return response()->json([
                             'status' => false,
-                            'message' => 'PIN already in use. Please choose a different PIN.'
+                            'message' => 'PIN already in use. Please choose a different PIN.',
                         ], 422);
                     }
                 }
@@ -78,7 +103,7 @@ class StaffController extends Controller
                 'role' => $data['role'],
                 'password' => $data['role'] !== 'cashier' ? Hash::make($sPassword) : null,
                 'pin_hash' => $data['role'] === 'cashier' ? Hash::make($data['pin']) : null,
-                'created_by' => $request->user()->id
+                'created_by' => $request->user()->id,
             ]);
 
             $staff->branches()->sync($data['branch_ids']);
@@ -86,13 +111,13 @@ class StaffController extends Controller
             return response()->json([
                 'status' => true,
                 'message' => 'Staff created',
-                'data' => $staff->load('branches')
+                'data' => $staff->load('branches'),
             ], 201);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
                 'message' => 'An error occurred while creating staff',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -312,22 +337,22 @@ class StaffController extends Controller
         }
     }
 
-     public function show($id)
+    public function show($id)
     {
         $authUser = Auth::user();
         $staff = User::with('branches')->find($id);
 
-        if (!$staff) {
+        if (! $staff) {
             return response()->json([
                 'status' => false,
-                'message' => 'Staff not found'
+                'message' => 'Staff not found',
             ], 404);
         }
 
         if (in_array($staff->role, ['superadmin'])) {
             return response()->json([
                 'status' => false,
-                'message' => 'Cannot view superadmin data'
+                'message' => 'Cannot view superadmin data',
             ], 403);
         }
 
@@ -335,14 +360,14 @@ class StaffController extends Controller
             if ($authUser->store_id !== $staff->store_id) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'You are not allowed to view staff from another store'
+                    'message' => 'You are not allowed to view staff from another store',
                 ], 403);
             }
         }
 
         return response()->json([
             'status' => true,
-            'data' => $staff
+            'data' => $staff,
         ], 200);
     }
 
@@ -359,7 +384,7 @@ class StaffController extends Controller
         return response()->json(['status' => true, 'message' => 'Deleted successfully'], 200);
     }
 
-     public function toggleActive(Request $request, $id)
+    public function toggleActive(Request $request, $id)
     {
         try {
             $authUser = Auth::user();
@@ -373,14 +398,14 @@ class StaffController extends Controller
             if (! $staff) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Staff not found'
+                    'message' => 'Staff not found',
                 ], 404);
             }
 
             if ($authUser->role === 'admin' && $authUser->store_id !== $staff->store_id) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'You are not allowed to update staff from another store'
+                    'message' => 'You are not allowed to update staff from another store',
                 ], 403);
             }
 
@@ -390,14 +415,14 @@ class StaffController extends Controller
 
             return response()->json([
                 'status' => true,
-                'message' => 'Staff ' . ($staff->is_active ? 'activated' : 'deactivated') . ' successfully',
-                'data' => $staff
+                'message' => 'Staff '.($staff->is_active ? 'activated' : 'deactivated').' successfully',
+                'data' => $staff,
             ], 200);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
                 'message' => 'An error occurred while updating staff status',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }

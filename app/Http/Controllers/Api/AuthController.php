@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules\Password;
 
 class AuthController extends Controller
 {
@@ -65,5 +67,77 @@ class AuthController extends Controller
         $request->user()->currentAccessToken()->delete();
 
         return response()->json(['message' => 'Logged out successfully']);
+    }
+
+    public function changePassword(Request $request)
+    {
+        $currentUser = Auth::user();
+
+        if ($request->has('user_id') && $request->user_id != $currentUser->id) {
+
+            $request->validate([
+                'user_id' => 'required|exists:users,id',
+            ]);
+
+            $targetUser = User::find($request->user_id);
+
+            if ($currentUser->role === 'cashier') {
+                return response()->json([
+                    'message' => 'Unauthorized. Cashiers cannot modify other staff credentials.',
+                ], 403);
+            }
+
+            if ($currentUser->role === 'manager') {
+                if ($targetUser->role !== 'cashier') {
+                    return response()->json([
+                        'message' => 'Unauthorized. Managers can only modify cashier passwords.',
+                    ], 403);
+                }
+
+                $managerBranches = $currentUser->branches()->pluck('branches.id')->toArray();
+                $cashierHasSameBranch = $targetUser->branches()->whereIn('branches.id', $managerBranches)->exists();
+
+                if (! $cashierHasSameBranch) {
+                    return response()->json([
+                        'message' => 'Unauthorized. This cashier does not belong to your branch.',
+                    ], 403);
+                }
+            }
+
+            if ($targetUser->role === 'cashier') {
+                $passwordRules = ['required', 'confirmed', 'regex:/^\d{4}$/'];
+            } else {
+                $passwordRules = ['required', 'confirmed', Password::min(6)];
+            }
+
+            $request->validate([
+                'password' => $passwordRules,
+            ], [
+                'password.regex' => 'The cashier password must be exactly a 4-digit numeric PIN.',
+            ]);
+
+            $targetUser->update(['password' => Hash::make($request->password)]);
+
+            return response()->json([
+                'message' => "Password for {$targetUser->name} ({$targetUser->role}) updated successfully.",
+            ], 200);
+        }
+
+        if ($currentUser->role === 'cashier') {
+            return response()->json([
+                'message' => 'Unauthorized endpoint access for this role.',
+            ], 403);
+        }
+
+        $request->validate([
+            'current_password' => 'required|current_password',
+            'password' => ['required', 'confirmed', Password::min(6)],
+        ]);
+
+        $currentUser->update(['password' => Hash::make($request->password)]);
+
+        return response()->json([
+            'message' => 'Your password has been changed successfully.',
+        ], 200);
     }
 }
