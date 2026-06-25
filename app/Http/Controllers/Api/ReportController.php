@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Inventory;
 use App\Models\SalesBill;
 use App\Models\SalesBillLine;
 use Carbon\Carbon;
@@ -617,5 +618,45 @@ class ReportController extends Controller
             'branch_performance' => $branchPerformance,
             'brand_sales' => $brandSales,
         ]);
+    }
+
+    public function getExpiryReport()
+    {
+        try {
+            $expiryData = Inventory::with(['product:id,name'])
+                ->whereNotNull('expiry_date')
+                ->where('qty', '>', 'sold_qty')
+                ->orderBy('expiry_date', 'asc')
+                ->get([
+                    'id',
+                    'product_id',
+                    'batch_no',
+                    'expiry_date',
+                    'qty',
+                ]);
+
+            $formattedData = $expiryData->map(function ($item) {
+                return [
+                    'inventory_id' => $item->id,
+                    'product_name' => $item->product->name ?? 'Unknown Product',
+                    'batch_no' => $item->batch_no,
+                    'expiry_date' => $item->expiry_date,
+                    'remaining_qty' => $item->qty - $item->sold_qty,
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Expiry report retrieved successfully.',
+                'data' => $formattedData,
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to fetch expiry data.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 }

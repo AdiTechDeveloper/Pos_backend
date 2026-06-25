@@ -31,7 +31,7 @@ Route::get('/staff/register-status', [App\Http\Controllers\Api\StaffController::
 Route::get('/staff/shift-summary', [StaffController::class, 'getShiftSummary'])->middleware('auth:sanctum');
 Route::post('/staff/close-register', [StaffController::class, 'closeRegister'])->middleware('auth:sanctum');
 Route::post('/open-register', [StaffController::class, 'openRegister'])->middleware('auth:sanctum');
-Route::post('/open-register',  [StaffController::class, 'openRegister'])->middleware('auth:sanctum');
+Route::post('/open-register', [StaffController::class, 'openRegister'])->middleware('auth:sanctum');
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/staff/shift-history', [StaffController::class, 'shiftHistory']);
 });
@@ -213,6 +213,7 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     Route::get('/reports/sales-report', [SalesReportController::class, 'index']);
     Route::get('/reports/purchase-report', [PurchaseReportController::class, 'index']);
     Route::get('/reports/financial-report', [FinancialReportController::class, 'index']);
+    Route::get('/reports/expiry-details', [ReportController::class, 'getExpiryReport']);
 });
 
 // admin reports
