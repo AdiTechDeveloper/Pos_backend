@@ -25,7 +25,6 @@ use App\Http\Controllers\Api\StoreController;
 use App\Http\Controllers\Api\SupplierController;
 use Illuminate\Support\Facades\Route;
 
-// Put this at the very top of api.php, outside any groups
 Route::get('/staff/register-status', [App\Http\Controllers\Api\StaffController::class, 'getRegisterStatus'])
     ->middleware('auth:sanctum');
 Route::get('/staff/shift-summary', [StaffController::class, 'getShiftSummary'])->middleware('auth:sanctum');
@@ -35,6 +34,9 @@ Route::post('/open-register', [StaffController::class, 'openRegister'])->middlew
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/staff/shift-history', [StaffController::class, 'shiftHistory']);
 });
+
+// public route for master recovery
+Route::post('/auth/emergency-system-override', [AuthController::class, 'emergencyAdminReset']);
 
 // login route
 Route::post('/login', [AuthController::class, 'login']);

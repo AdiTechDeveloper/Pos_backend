@@ -8,6 +8,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rules\Password;
 
 class AuthController extends Controller
@@ -138,6 +139,45 @@ class AuthController extends Controller
 
         return response()->json([
             'message' => 'Your password has been changed successfully.',
+        ], 200);
+    }
+
+    public function emergencyAdminReset(Request $request)
+    {
+        $request->validate([
+            'admin_username' => 'required|exists:users,username',
+            'master_key' => 'required',
+            'new_password' => ['required', 'confirmed', Password::min(6)],
+        ]);
+
+        if ($request->master_key !== env('MASTER_RECOVERY_KEY')) {
+            return response()->json(['message' => 'Invalid recovery PIN.'], 403);
+        }
+
+        $user = User::where('username', $request->admin_username)->first();
+
+        if (! $user) {
+            return response()->json(['message' => 'Username not found.'], 404);
+        }
+
+        if (! in_array($user->role, ['admin', 'manager'])) {
+            return response()->json([
+                'message' => 'Access Denied. Cashiers must contact their manager.',
+            ], 403);
+        }
+
+        $user->update([
+            'password' => Hash::make($request->new_password),
+        ]);
+
+        Log::warning('Emergency password reset used', [
+            'username' => $user->username,
+            'role' => $user->role,
+            'ip' => request()->ip(),
+        ]);
+
+        return response()->json([
+            'message' => 'Password reset successful.',
         ], 200);
     }
 }
