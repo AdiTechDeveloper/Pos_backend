@@ -188,9 +188,9 @@ class SalesBillController extends Controller
             'lines.*.qty' => 'required|numeric|min:0.01',
 
             'customer_id' => 'nullable|exists:customers,id',
-            'customer' => 'nullable|array',
-            'customer.name' => 'required_with:customer|string|max:255',
-            'customer.mobile' => 'required_with:customer|string|max:15',
+            'customer' => 'required|array',
+            'customer.name' => 'required|string|max:255',
+            'customer.mobile' => 'required|string|max:15',
             'payment_type' => 'required|in:cash,online,split,credit',
             'cash_received' => 'nullable|numeric|min:0',
             'balance_return' => 'nullable|numeric|min:0',
@@ -428,26 +428,39 @@ class SalesBillController extends Controller
                 'balance_return' => $request->payment_type === 'credit' ? 0 : ($request->balance_return ?? 0),
             ]);
 
+            $customer = Customer::updateOrCreate(
+                ['mobile' => $request->customer['mobile']],
+                [
+                    'name' => $request->customer['name'],
+                    'add1' => $request->customer['add1'],
+                    'add2' => $request->customer['add2'],
+                    'area' => $request->customer['area'],
+                    'city' => $request->customer['city'],
+                ]
+            );
+
+            $bill->customer_id = $customer->id;
+
+            // Payment Logic
             if ($request->payment_type === 'credit') {
-
-                if ($request->customer) {
-                    $customer = Customer::firstOrCreate(
-                        ['mobile' => $request->customer['mobile']],
-                        ['name' => $request->customer['name']]
-                    );
-
-                    $bill->customer_id = $customer->id;
-                }
-
+                // Pay later
                 $bill->paid_amount = 0;
                 $bill->due_amount = $subtotal;
                 $bill->payment_status = 'unpaid';
-
             } else {
+                // Cash / Online / Split
+                $paidAmount = $request->cash_received ?? $subtotal;
 
-                $bill->paid_amount = 0;
-                $bill->due_amount = $subtotal;
-                $bill->payment_status = 'unpaid';
+                $bill->paid_amount = $paidAmount;
+                $bill->due_amount = max($subtotal - $paidAmount, 0);
+
+                if ($bill->due_amount == 0) {
+                    $bill->payment_status = 'paid';
+                } elseif ($paidAmount > 0) {
+                    $bill->payment_status = 'partial';
+                } else {
+                    $bill->payment_status = 'unpaid';
+                }
             }
 
             $bill->save();
