@@ -189,7 +189,7 @@ class SalesBillController extends Controller
 
             'customer_id' => 'nullable|exists:customers,id',
             'customer' => 'required|array',
-            'customer.name' => 'required|string|max:255',
+            'customer.name' => 'nullable|string|max:255',
             'customer.mobile' => 'required|string|max:15',
             'payment_type' => 'required|in:cash,online,split,credit',
             'cash_received' => 'nullable|numeric|min:0',
