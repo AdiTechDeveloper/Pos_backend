@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Models\CustomerWalletTransaction;
 use App\Models\GstOutputLedger;
 use App\Models\Inventory;
 use App\Models\Product;
@@ -206,7 +207,7 @@ class SalesBillController extends Controller
             'customer' => 'required|array',
             'customer.name' => 'nullable|string|max:255',
             'customer.mobile' => 'required|string|max:15',
-            'payment_type' => 'required|in:cash,online,split,credit',
+            'payment_type' => 'required|in:cash,online,split,credit,wallet',
             'cash_received' => 'nullable|numeric|min:0',
             'online_received' => 'nullable|numeric|min:0',
             'balance_return' => 'nullable|numeric|min:0',
@@ -547,6 +548,35 @@ class SalesBillController extends Controller
         DB::beginTransaction();
 
         try {
+
+            $walletAmount = collect($request->payments)->where('method', 'wallet')->sum('amount');
+
+            if ($walletAmount > 0) {
+                if (! $bill->customer_id) {
+                    throw new \Exception('Wallet payment requires a customer on this bill.');
+                }
+
+                $customer = Customer::where('id', $bill->customer_id)->lockForUpdate()->first();
+
+                if (! $customer || $customer->opening_balance < $walletAmount) {
+                    throw new \Exception('Insufficient wallet balance. Available: ₹'.($customer->opening_balance ?? 0));
+                }
+
+                $before = $customer->opening_balance;
+                $customer->opening_balance -= $walletAmount;
+                $customer->save();
+
+                CustomerWalletTransaction::create([
+                    'customer_id' => $customer->id,
+                    'type' => 'debit',
+                    'amount' => $walletAmount,
+                    'balance_before' => $before,
+                    'balance_after' => $customer->opening_balance,
+                    'source_type' => 'bill_applied',
+                    'source_id' => $bill->id,
+                    'created_by' => Auth::id(),
+                ]);
+            }
 
             $totalPaid = 0;
             $cashReceivedSum = 0;

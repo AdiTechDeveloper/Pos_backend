@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\BrandController;
 use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\FinancialReportController;
 use App\Http\Controllers\Api\GSTOutputReportController;
 use App\Http\Controllers\Api\GstRateController;
@@ -196,6 +197,11 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     Route::post('/sales-bill/print-data', [SalesBillController::class, 'getPrintData']);
 
     Route::post('/sales-bills/customer-pay-due', [SalesBillController::class, 'customerPayDue']);
+
+    // Advance wallet
+    Route::post('/customers/advance', [CustomerController::class, 'addAdvance']);
+    Route::get('/customers/wallet-balance/{mobile}', [CustomerController::class, 'walletBalance']);
+    Route::get('/customers/{id}/wallet-history', [CustomerController::class, 'walletHistory']);
 });
 
 // Report routes
