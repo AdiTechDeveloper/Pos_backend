@@ -35,9 +35,23 @@ class SalesBillController extends Controller
         }
 
         // Fetch all unique batches for this product in the user's branches
+        // $batches = Inventory::where('product_id', $product->id)
+        //     ->whereIn('branch_id', $branchIds)
+        //     ->whereColumn('sold_qty', '<', 'qty')
+        //     ->select('id', 'batch_no', 'batch_barcode', 'mrp', 'cost_price', 'selling_price', 'expiry_date', 'qty', 'sold_qty')
+        //     ->get()
+        //     ->groupBy('batch_barcode')
+        //     ->map(function ($group) {
+        //         $first = $group->first();
+
         $batches = Inventory::where('product_id', $product->id)
             ->whereIn('branch_id', $branchIds)
             ->whereColumn('sold_qty', '<', 'qty')
+            ->where(function ($q) {
+                $q->whereNull('expiry_date')
+                    ->orWhere('expiry_date', '>=', now()->toDateString());
+            })
+            ->orderBy('expiry_date', 'asc') // FEFO: jaldi expire hone wali batch pehle
             ->select('id', 'batch_no', 'batch_barcode', 'mrp', 'cost_price', 'selling_price', 'expiry_date', 'qty', 'sold_qty')
             ->get()
             ->groupBy('batch_barcode')
@@ -194,6 +208,7 @@ class SalesBillController extends Controller
             'customer.mobile' => 'required|string|max:15',
             'payment_type' => 'required|in:cash,online,split,credit',
             'cash_received' => 'nullable|numeric|min:0',
+            'online_received' => 'nullable|numeric|min:0',
             'balance_return' => 'nullable|numeric|min:0',
             'lines.*.selling_price' => 'nullable|numeric|min:0',
             'lines.*.original_price' => 'nullable|numeric|min:0',
@@ -214,14 +229,14 @@ class SalesBillController extends Controller
                 ], 400);
             }
 
-            // 1. Determine Target Date First
+            // Determine Target Date First
             $billDate = $request->filled('selected_date')
                 ? Carbon::parse($request->input('selected_date'))->setTimeFrom(now())
                 : now();
 
             $datePrefix = $billDate->format('ymd');
 
-            // 2. Count existing bills specifically for the target date
+            // Count existing bills specifically for the target date
             $todayCount = SalesBill::where('store_id', $user->store_id)
                 ->where('branch_id', $branchId)
                 ->whereDate('created_at', $billDate->toDateString())
@@ -235,7 +250,7 @@ class SalesBillController extends Controller
 
             $billNo = $storePad.$branchPad.$userPad.$datePrefix.$sequence;
 
-            // 3. Create Sales Bill Record
+            // Create Sales Bill Record
             $bill = SalesBill::create([
                 'store_id' => $user->store_id,
                 'branch_id' => $branchId,
@@ -436,8 +451,8 @@ class SalesBillController extends Controller
                 'total_saved' => $totalSaved,
                 'total_cogs' => $totalCogs,
                 'total_profit' => $totalProfit,
-                'cash_received' => $request->payment_type === 'credit' ? 0 : ($request->cash_received ?? 0),
-                'balance_return' => $request->payment_type === 'credit' ? 0 : ($request->balance_return ?? 0),
+                // 'cash_received' => $request->payment_type === 'credit' ? 0 : ($request->cash_received ?? 0),
+                // 'balance_return' => $request->payment_type === 'credit' ? 0 : ($request->balance_return ?? 0),
             ]);
 
             $customer = Customer::updateOrCreate(
@@ -459,12 +474,16 @@ class SalesBillController extends Controller
                 $bill->due_amount = $subtotal;
                 $bill->payment_status = 'unpaid';
             } else {
-                $paidAmount = $request->cash_received ?? $subtotal;
+                $cashReceived = (float) ($request->cash_received ?? 0);
+                $onlineReceived = (float) ($request->online_received ?? 0);
+                $paidAmount = min($cashReceived + $onlineReceived, $subtotal);
 
+                $bill->cash_received = $cashReceived;
+                $bill->online_received = $onlineReceived;
                 $bill->paid_amount = $paidAmount;
                 $bill->due_amount = max($subtotal - $paidAmount, 0);
 
-                if ($bill->due_amount == 0) {
+                if ($bill->due_amount == 0 && $paidAmount > 0) {
                     $bill->payment_status = 'paid';
                 } elseif ($paidAmount > 0) {
                     $bill->payment_status = 'partial';
@@ -530,7 +549,8 @@ class SalesBillController extends Controller
         try {
 
             $totalPaid = 0;
-            $actualCashReceived = collect($request->payments)->sum('cash_received');
+            $cashReceivedSum = 0;
+            $onlineReceivedSum = 0;
 
             foreach ($request->payments as $payment) {
 
@@ -545,17 +565,23 @@ class SalesBillController extends Controller
                 ]);
 
                 $totalPaid += $payment['amount'];
+
+                if ($payment['method'] === 'cash') {
+                    $cashReceivedSum += (float) ($payment['cash_received'] ?? $payment['amount']);
+                } elseif ($payment['method'] === 'online') {
+                    $onlineReceivedSum += (float) $payment['amount'];
+                }
             }
 
-            $bill->cash_received = $actualCashReceived;
+            $bill->cash_received = (float) $bill->cash_received + $cashReceivedSum;
+            $bill->online_received = (float) $bill->online_received + $onlineReceivedSum;
 
-            $bill->paid_amount = min($totalPaid, $bill->total_amount);
+            $bill->paid_amount = min($bill->paid_amount + $totalPaid, $bill->total_amount);
             $bill->due_amount = max($bill->total_amount - $bill->paid_amount, 0);
 
-            if ($actualCashReceived > $bill->total_amount) {
-                $bill->balance_return = $actualCashReceived - $bill->total_amount;
-            } else {
-                $bill->balance_return = 0;
+            if ($cashReceivedSum > 0) {
+                $cashAppliedToThisBill = min($cashReceivedSum, $bill->total_amount - ($bill->paid_amount - $totalPaid));
+                $bill->balance_return = max($cashReceivedSum - $cashAppliedToThisBill, 0);
             }
 
             // Payment status
@@ -644,8 +670,12 @@ class SalesBillController extends Controller
 
             $bill->paid_amount = $totalPaid;
             $bill->due_amount = $bill->total_amount - $totalPaid;
-            $bill->cash_received = $bill->cash_received ?? 0;
-            $bill->balance_return = $bill->balance_return ?? 0;
+
+            if ($request->method === 'cash') {
+                $bill->cash_received = (float) $bill->cash_received + (float) $request->amount;
+            } elseif ($request->method === 'online') {
+                $bill->online_received = (float) $bill->online_received + (float) $request->amount;
+            }
 
             // Update status
             if ($bill->due_amount == 0) {
@@ -866,6 +896,12 @@ class SalesBillController extends Controller
         // Update bill
         $bill->paid_amount += $amount;
         $bill->due_amount -= $amount;
+
+        if ($method === 'cash') {
+            $bill->cash_received = (float) $bill->cash_received + $amount;
+        } elseif ($method === 'online') {
+            $bill->online_received = (float) $bill->online_received + $amount;
+        }
 
         if ($bill->due_amount == 0) {
             $bill->payment_status = 'paid';

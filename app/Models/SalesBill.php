@@ -21,6 +21,7 @@ class SalesBill extends Model
         'total_cogs',
         'total_profit',
         'cash_received',
+        'online_received',
         'balance_return',
         'payment_status',
         'last_idempotency_key_store',

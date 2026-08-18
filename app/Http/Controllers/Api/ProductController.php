@@ -13,7 +13,11 @@ class ProductController extends Controller
 {
     public function index(Request $request)
     {
-        $storeId = Auth::user()->store_id;
+        $user = Auth::user();
+        $storeId = $user->store_id;
+        $branchIds = $user->branches->pluck('id')->toArray();
+
+        $showOutOfStock = $request->boolean('show_out_of_stock', false); // default: hide
 
         $products = Product::where('products.store_id', $storeId)
             ->when($request->category_id, function ($q) use ($request) {
@@ -25,16 +29,50 @@ class ProductController extends Controller
             ->when($request->search, function ($q) use ($request) {
                 $q->where('name', 'like', '%'.$request->search.'%');
             })
-            // Selects the earliest upcoming expiry date from associated inventories
+            ->with(['store', 'brand', 'category', 'gstRate'])
+            ->with(['inventories' => function ($q) use ($branchIds) {
+                $q->whereIn('branch_id', $branchIds)
+                    ->whereColumn('sold_qty', '<', 'qty')
+                    ->where(function ($q2) {
+                        $q2->whereNull('expiry_date')
+                            ->orWhere('expiry_date', '>=', now()->toDateString());
+                    })
+                    ->orderBy('expiry_date', 'asc');
+            }])
+            // Total available stock
+            ->addSelect([
+                'total_stock' => Inventory::selectRaw('COALESCE(SUM(qty - sold_qty), 0)')
+                    ->whereColumn('inventories.product_id', 'products.id')
+                    ->whereIn('inventories.branch_id', $branchIds)
+                    ->whereColumn('inventories.sold_qty', '<', 'inventories.qty')
+                    ->where(function ($q) {
+                        $q->whereNull('inventories.expiry_date')
+                            ->orWhere('inventories.expiry_date', '>=', now()->toDateString());
+                    }),
+            ])
             ->addSelect([
                 'nearest_expiry' => Inventory::selectRaw('MIN(expiry_date)')
                     ->whereColumn('inventories.product_id', 'products.id')
-                    ->where('inventories.expiry_date', '>=', now()->toDateString()), // Excludes already expired items from top priority
+                    ->whereIn('inventories.branch_id', $branchIds)
+                    ->whereColumn('inventories.sold_qty', '<', 'inventories.qty')
+                    ->where('inventories.expiry_date', '>=', now()->toDateString()),
             ])
-            ->with(['store', 'brand', 'category', 'gstRate', 'inventories'])
-            // Sorts nearest expiry dates first; NULL (no inventory/expiry) goes to bottom
-            ->orderByRaw('nearest_expiry IS NULL DESC, nearest_expiry DESC')
+            ->when(! $showOutOfStock, function ($q) {
+                $q->havingRaw('total_stock > 0');
+            })
+            ->orderByRaw('nearest_expiry IS NULL, nearest_expiry ASC') // fixed: DESC tha, ASC hona chahiye
             ->get();
+
+        $products = $products->map(function ($product) {
+            $prices = $product->inventories->pluck('selling_price')->filter();
+
+            $product->min_price = $prices->min();
+            $product->max_price = $prices->max();
+            $product->has_multiple_prices = $prices->unique()->count() > 1;
+            $product->batch_count = $product->inventories->count();
+
+            return $product;
+        });
 
         return response()->json([
             'status' => true,
