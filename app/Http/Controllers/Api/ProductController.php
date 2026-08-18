@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Inventory;
 use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -14,7 +15,7 @@ class ProductController extends Controller
     {
         $storeId = Auth::user()->store_id;
 
-        $products = Product::where('store_id', $storeId)
+        $products = Product::where('products.store_id', $storeId)
             ->when($request->category_id, function ($q) use ($request) {
                 $q->where('category_id', $request->category_id);
             })
@@ -22,15 +23,22 @@ class ProductController extends Controller
                 $q->where('brand_id', $request->brand_id);
             })
             ->when($request->search, function ($q) use ($request) {
-                $q->where('name', 'like', '%' . $request->search . '%');
+                $q->where('name', 'like', '%'.$request->search.'%');
             })
+            // Selects the earliest upcoming expiry date from associated inventories
+            ->addSelect([
+                'nearest_expiry' => Inventory::selectRaw('MIN(expiry_date)')
+                    ->whereColumn('inventories.product_id', 'products.id')
+                    ->where('inventories.expiry_date', '>=', now()->toDateString()), // Excludes already expired items from top priority
+            ])
             ->with(['store', 'brand', 'category', 'gstRate', 'inventories'])
-            ->orderBy('name', 'asc')
+            // Sorts nearest expiry dates first; NULL (no inventory/expiry) goes to bottom
+            ->orderByRaw('nearest_expiry IS NULL DESC, nearest_expiry DESC')
             ->get();
 
         return response()->json([
             'status' => true,
-            'products' => $products
+            'products' => $products,
         ], 200);
     }
 
@@ -39,16 +47,16 @@ class ProductController extends Controller
         $storeId = Auth::user()->store_id;
         $product = Product::where('store_id', $storeId)->where('id', $id)->first();
 
-        if (!$product) {
+        if (! $product) {
             return response()->json([
                 'status' => false,
-                'message' => 'Product not found'
+                'message' => 'Product not found',
             ], 404);
         }
 
         return response()->json([
             'status' => true,
-            'product' => $product
+            'product' => $product,
         ], 200);
     }
 
@@ -67,23 +75,23 @@ class ProductController extends Controller
         $checkDigit = (10 - ($sum % 10)) % 10;
 
         // Final barcode
-        return $base . $checkDigit;
+        return $base.$checkDigit;
     }
 
     public function store(Request $request)
     {
         try {
             $request->validate([
-                'name'      => 'required|string',
-                'sku'       => 'nullable|string|unique:products,sku',
-                'barcode'   => 'nullable|string', // This will be the Manufacturer barcode if scanned
+                'name' => 'required|string',
+                'sku' => 'nullable|string|unique:products,sku',
+                'barcode' => 'nullable|string', // This will be the Manufacturer barcode if scanned
             ]);
 
             $user = Auth::user();
-            if (!in_array($user->role, ['admin', 'manager'])) {
+            if (! in_array($user->role, ['admin', 'manager'])) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Unauthorized'
+                    'message' => 'Unauthorized',
                 ], 403);
             }
 
@@ -119,13 +127,13 @@ class ProductController extends Controller
             return response()->json([
                 'status' => true,
                 'message' => 'Product created successfully',
-                'product' => $product
+                'product' => $product,
             ], 201);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
                 'message' => 'An error occurred while creating the product',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -139,10 +147,10 @@ class ProductController extends Controller
 
             $user = Auth::user();
 
-            if (!in_array($user->role, ['admin', 'manager'])) {
+            if (! in_array($user->role, ['admin', 'manager'])) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Unauthorized'
+                    'message' => 'Unauthorized',
                 ], 403);
             }
 
@@ -150,10 +158,10 @@ class ProductController extends Controller
 
             $product = Product::where('store_id', $storeId)->where('id', $id)->first();
 
-            if (!$product) {
+            if (! $product) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Product not found'
+                    'message' => 'Product not found',
                 ], 404);
             }
 
@@ -171,13 +179,13 @@ class ProductController extends Controller
             return response()->json([
                 'status' => true,
                 'message' => 'Product updated successfully',
-                'product' => $product
+                'product' => $product,
             ], 200);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
                 'message' => 'An error occurred while updating the product',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -187,10 +195,10 @@ class ProductController extends Controller
         try {
             $user = Auth::user();
 
-            if (!in_array($user->role, ['admin', 'manager'])) {
+            if (! in_array($user->role, ['admin', 'manager'])) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Unauthorized'
+                    'message' => 'Unauthorized',
                 ], 403);
             }
 
@@ -198,10 +206,10 @@ class ProductController extends Controller
 
             $product = Product::where('store_id', $storeId)->where('id', $id)->first();
 
-            if (!$product) {
+            if (! $product) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Product not found'
+                    'message' => 'Product not found',
                 ], 404);
             }
 
@@ -209,13 +217,13 @@ class ProductController extends Controller
 
             return response()->json([
                 'status' => true,
-                'message' => 'Product deleted successfully'
+                'message' => 'Product deleted successfully',
             ], 200);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
                 'message' => 'An error occurred while deleting the product.',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -227,10 +235,10 @@ class ProductController extends Controller
 
             $product = Product::where('store_id', $storeId)->where('id', $id)->first();
 
-            if (!$product) {
+            if (! $product) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Product not found'
+                    'message' => 'Product not found',
                 ], 404);
             }
 
@@ -252,7 +260,7 @@ class ProductController extends Controller
             return response()->json([
                 'status' => false,
                 'message' => 'An error occurred while generating barcode image.',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }

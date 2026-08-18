@@ -139,6 +139,26 @@ class PurchaseBillController extends Controller
         return "POS-{$productId}-{$date}-{$nextNumber}";
     }
 
+    private function generateInwardNumber($branchId)
+    {
+        // Financial Year prefix (Optional, e.g., 2425)
+        $fy = date('m') >= 4 ? date('y').(date('y') + 1) : (date('y') - 1).date('y');
+
+        // Previous maximum sequence value lookup
+        $lastSequence = PurchaseBill::where('branch_id', $branchId)
+            ->max('inward_sequence') ?? 0;
+
+        $nextSequence = $lastSequence + 1;
+
+        // Formatted Inward Number e.g., INW/2425/0001
+        $inwardNo = 'INW/'.$fy.'/'.str_pad($nextSequence, 4, '0', STR_PAD_LEFT);
+
+        return [
+            'inward_no' => $inwardNo,
+            'inward_sequence' => $nextSequence,
+        ];
+    }
+
     // public function store(Request $request)
     // {
     //     $validated = $request->validate([
@@ -405,6 +425,9 @@ class PurchaseBillController extends Controller
             $supplier = Supplier::findOrFail($validated['supplier_id']);
             $branch = Branch::findOrFail($validated['branch_id']);
 
+            // Generate Inward Details
+            $inwardData = $this->generateInwardNumber($validated['branch_id']);
+
             $originState = ($user->role === 'admin')
                 ? Store::findOrFail($storeId)->state
                 : $branch->state;
@@ -417,6 +440,8 @@ class PurchaseBillController extends Controller
                 'store_id' => $storeId,
                 'branch_id' => $validated['branch_id'],
                 'supplier_id' => $validated['supplier_id'],
+                'inward_no' => $inwardData['inward_no'],
+                'inward_sequence' => $inwardData['inward_sequence'],
                 'bill_no' => $validated['bill_no'],
                 'bill_date' => $validated['bill_date'],
                 'is_lost' => $validated['is_lost'] ?? 0,

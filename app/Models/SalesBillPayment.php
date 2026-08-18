@@ -13,6 +13,7 @@ class SalesBillPayment extends Model
         'transaction_id',
         'gateway',
         'status',
+        'created_at',
     ];
 
     public function salesBill()

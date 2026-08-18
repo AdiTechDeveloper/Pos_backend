@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\SalesBill;
 use App\Models\SalesBillLine;
 use App\Models\SalesBillPayment;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -184,7 +185,7 @@ class SalesBillController extends Controller
         $request->validate([
             'lines' => 'required|array|min:1',
             'lines.*.product_id' => 'required|integer',
-            'lines.*.inventory_id' => 'required|integer', // From frontend popup
+            'lines.*.inventory_id' => 'required|integer',
             'lines.*.qty' => 'required|numeric|min:0.01',
 
             'customer_id' => 'nullable|exists:customers,id',
@@ -197,6 +198,7 @@ class SalesBillController extends Controller
             'lines.*.selling_price' => 'nullable|numeric|min:0',
             'lines.*.original_price' => 'nullable|numeric|min:0',
             'lines.*.is_price_overridden' => 'nullable|boolean',
+            'selected_date' => 'nullable|date',
         ]);
 
         try {
@@ -212,20 +214,28 @@ class SalesBillController extends Controller
                 ], 400);
             }
 
-            // Start Bill Number Generation (Original Logic)
-            $storeId = str_pad($user->store_id, 2, '0', STR_PAD_LEFT);
-            $brId = str_pad($branchId, 2, '0', STR_PAD_LEFT);
-            $counterId = str_pad($user->id, 2, '0', STR_PAD_LEFT);
-            $date = now()->format('ymd');
+            // 1. Determine Target Date First
+            $billDate = $request->filled('selected_date')
+                ? Carbon::parse($request->input('selected_date'))->setTimeFrom(now())
+                : now();
 
+            $datePrefix = $billDate->format('ymd');
+
+            // 2. Count existing bills specifically for the target date
             $todayCount = SalesBill::where('store_id', $user->store_id)
                 ->where('branch_id', $branchId)
-                ->whereDate('created_at', today())
+                ->whereDate('created_at', $billDate->toDateString())
                 ->count();
 
-            $seq = str_pad($todayCount + 1, 4, '0', STR_PAD_LEFT);
-            $billNo = "{$storeId}{$brId}{$counterId}{$date}{$seq}";
+            $sequence = str_pad($todayCount + 1, 4, '0', STR_PAD_LEFT);
 
+            $storePad = str_pad($user->store_id, 2, '0', STR_PAD_LEFT);
+            $branchPad = str_pad($branchId, 2, '0', STR_PAD_LEFT);
+            $userPad = str_pad($user->id, 2, '0', STR_PAD_LEFT);
+
+            $billNo = $storePad.$branchPad.$userPad.$datePrefix.$sequence;
+
+            // 3. Create Sales Bill Record
             $bill = SalesBill::create([
                 'store_id' => $user->store_id,
                 'branch_id' => $branchId,
@@ -237,6 +247,7 @@ class SalesBillController extends Controller
                 'last_idempotency_key_store' => $idempotencyKey,
                 'customer_id' => $request->customer_id,
                 'payment_type' => $request->payment_type,
+                'created_at' => $billDate,
             ]);
 
             $subtotal = 0;
@@ -253,8 +264,8 @@ class SalesBillController extends Controller
                 $selectedInventory = Inventory::where('id', $lineData['inventory_id'])
                     ->where('branch_id', $branchId)
                     ->firstOrFail();
+
                 $batchBarcode = $selectedInventory->batch_barcode;
-                // $price = (float) $selectedInventory->selling_price;
                 $inventoryPrice = (float) $selectedInventory->selling_price;
                 $isOverridden = ! empty($lineData['is_price_overridden']) && $lineData['is_price_overridden'] == true;
                 $price = $isOverridden && isset($lineData['selling_price'])
@@ -263,7 +274,6 @@ class SalesBillController extends Controller
 
                 $originalPrice = (float) ($lineData['original_price'] ?? $inventoryPrice);
                 $overridePrice = $isOverridden ? $price : null;
-
                 $mrp = (float) $selectedInventory->mrp;
 
                 if ($selectedInventory->qty <= $selectedInventory->sold_qty) {
@@ -276,14 +286,14 @@ class SalesBillController extends Controller
 
                 $requiredQty = (float) $lineData['qty'];
 
-                // Fetch all rows (Paid + Free) belonging to this specific batch
+                // Fetch rows for this batch (using $billDate for expiry checks if backdating)
                 $batchRows = Inventory::where('product_id', $product->id)
                     ->where('batch_barcode', $batchBarcode)
                     ->where('branch_id', $branchId)
                     ->whereColumn('sold_qty', '<', 'qty')
-                    ->where(function ($q) {
+                    ->where(function ($q) use ($billDate) {
                         $q->whereNull('expiry_date')
-                            ->orWhere('expiry_date', '>=', now());
+                            ->orWhere('expiry_date', '>=', $billDate);
                     })
                     ->orderBy('free', 'asc')
                     ->lockForUpdate()
@@ -310,7 +320,6 @@ class SalesBillController extends Controller
 
                     $consume = min($available, $remaining);
 
-                    // COGS Calculation (Same as your logic but per batch row)
                     $purchaseRate = (float) $batch->cost_price;
                     $gstRate = $product->gstRate->rate ?? 0;
 
@@ -323,7 +332,7 @@ class SalesBillController extends Controller
                     $remaining -= $consume;
                 }
 
-                // Tax Logic (Original Functionality Preserved)
+                // Tax Logic
                 $gstRate = $product->gstRate->rate ?? 0;
                 if ($gstRate > 0) {
                     if ($product->gst_inclusive) {
@@ -376,6 +385,7 @@ class SalesBillController extends Controller
                     'total_gst' => $totalLineGst,
                     'cogs' => $totalLineCogs,
                     'profit' => $profit,
+                    'created_at' => $billDate,
                 ]);
 
                 // Log price override for audit report
@@ -391,6 +401,7 @@ class SalesBillController extends Controller
                         'qty' => $requiredQty,
                         'total_loss' => round(($originalPrice - $price) * $requiredQty, 2),
                         'overridden_by' => $user->id,
+                        'created_at' => $billDate,
                     ]);
                 }
 
@@ -405,6 +416,7 @@ class SalesBillController extends Controller
                         'sgst' => $sgst,
                         'igst' => $igst,
                         'total_gst' => $totalLineGst,
+                        'created_at' => $billDate,
                     ]);
                 }
 
@@ -431,11 +443,11 @@ class SalesBillController extends Controller
             $customer = Customer::updateOrCreate(
                 ['mobile' => $request->customer['mobile']],
                 [
-                    'name' => $request->customer['name'],
-                    'add1' => $request->customer['add1'],
-                    'add2' => $request->customer['add2'],
-                    'area' => $request->customer['area'],
-                    'city' => $request->customer['city'],
+                    'name' => $request->customer['name'] ?? null,
+                    'add1' => $request->customer['add1'] ?? null,
+                    'add2' => $request->customer['add2'] ?? null,
+                    'area' => $request->customer['area'] ?? null,
+                    'city' => $request->customer['city'] ?? null,
                 ]
             );
 
@@ -443,12 +455,10 @@ class SalesBillController extends Controller
 
             // Payment Logic
             if ($request->payment_type === 'credit') {
-                // Pay later
                 $bill->paid_amount = 0;
                 $bill->due_amount = $subtotal;
                 $bill->payment_status = 'unpaid';
             } else {
-                // Cash / Online / Split
                 $paidAmount = $request->cash_received ?? $subtotal;
 
                 $bill->paid_amount = $paidAmount;
@@ -467,11 +477,18 @@ class SalesBillController extends Controller
 
             DB::commit();
 
-            return response()->json(['status' => true, 'message' => 'Sales bill created successfully', 'data' => $bill->load('lines')]);
+            return response()->json([
+                'status' => true,
+                'message' => 'Sales bill created successfully',
+                'data' => $bill->load('lines'),
+            ]);
         } catch (\Exception $e) {
             DB::rollBack();
 
-            return response()->json(['status' => false, 'message' => $e->getMessage()], 500);
+            return response()->json([
+                'status' => false,
+                'message' => $e->getMessage(),
+            ], 500);
         }
     }
 
@@ -524,6 +541,7 @@ class SalesBillController extends Controller
                     'transaction_id' => $payment['transaction_id'] ?? null,
                     'gateway' => $payment['gateway'] ?? null,
                     'status' => 'success',
+                    'created_at' => $bill->created_at,
                 ]);
 
                 $totalPaid += $payment['amount'];

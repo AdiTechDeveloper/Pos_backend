@@ -14,7 +14,8 @@ class GstOutputLedger extends Model
         'cgst',
         'sgst',
         'igst',
-        'total_gst'
+        'total_gst',
+        'created_at',
     ];
 
     public function bill()

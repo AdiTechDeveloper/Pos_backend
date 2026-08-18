@@ -25,6 +25,7 @@ class SalesBillLine extends Model
         'total_gst',
         'cogs',
         'profit',
+        'created_at',
     ];
 
     public function product()

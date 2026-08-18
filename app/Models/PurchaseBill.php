@@ -14,6 +14,8 @@ class PurchaseBill extends Model
         'branch_id',
         'supplier_id',
         'bill_no',
+        'inward_no',
+        'inward_sequence',
         'bill_date',
         'taxable_value',
         'is_lost',

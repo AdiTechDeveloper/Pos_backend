@@ -27,6 +27,7 @@ class SalesBill extends Model
         'last_idempotency_key_payment',
         'bill_status',
         'created_by',
+        'created_at',
     ];
 
     public function lines()
