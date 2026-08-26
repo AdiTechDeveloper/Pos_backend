@@ -32,6 +32,7 @@ class SalesReportController extends Controller
             'products' => $this->service->getProductPerformance($filters),
             'payment_methods' => $this->service->getPaymentMethods($filters),
             'price_overrides' => $this->service->getPriceOverrides($filters),
+            'sales_extremes' => $this->service->getSalesExtremes($filters),
             'filters_applied' => $filters,
         ]);
     }

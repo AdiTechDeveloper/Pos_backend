@@ -570,6 +570,7 @@ class ReportController extends Controller
         $lowestDay = DB::table('sales_bills')
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
             ->whereBetween('created_at', [$start, $end])
+            ->whereDate('created_at', '<', Carbon::today())
             ->selectRaw('DATE(created_at) as date')
             ->selectRaw('SUM(total_amount) as sale')
             ->groupBy('date')
@@ -613,6 +614,16 @@ class ReportController extends Controller
             'top_products' => $topProducts,
             'slow_products' => $slowProducts,
             'payment_methods' => $payments,
+            'sales_extremes' => [
+                'highest_day' => $highestDay ? [
+                    'date' => $highestDay->date,
+                    'sales' => (float) $highestDay->sale,
+                ] : null,
+                'lowest_day' => $lowestDay ? [
+                    'date' => $lowestDay->date,
+                    'sales' => (float) $lowestDay->sale,
+                ] : null,
+            ],
             'highest_sale_day' => $highestDay,
             'lowest_sale_day' => $lowestDay,
             'branch_performance' => $branchPerformance,

@@ -15,12 +15,27 @@ class SalesReportService
         $branchId = $input['branch_id'] ?? null;
 
         [$from, $to] = match ($range) {
-            'today' => [Carbon::today(), Carbon::today()->endOfDay()],
-            'yesterday' => [Carbon::yesterday(), Carbon::yesterday()->endOfDay()],
-            'last_7_days' => [Carbon::now()->subDays(6)->startOfDay(), Carbon::now()->endOfDay()],
-            'custom' => [Carbon::parse($input['date_from'])->startOfDay(),
-                Carbon::parse($input['date_to'])->endOfDay()],
-            default => [Carbon::now()->startOfMonth(), Carbon::now()->endOfDay()], // this_month
+            'today' => [Carbon::today(), Carbon::today()->endOfDay()], // (keep if needed)
+
+            'yesterday' => [
+                Carbon::yesterday(),
+                Carbon::yesterday()->endOfDay(),
+            ],
+
+            'last_7_days' => [
+                Carbon::now()->subDays(7)->startOfDay(),
+                Carbon::yesterday()->endOfDay(),
+            ],
+
+            'custom' => [
+                Carbon::parse($input['date_from'])->startOfDay(),
+                Carbon::parse($input['date_to'])->endOfDay(),
+            ],
+
+            default => [
+                Carbon::now()->startOfMonth(),
+                Carbon::yesterday()->endOfDay(),
+            ],
         };
 
         return compact('from', 'to', 'range', 'billStatus', 'storeId', 'branchId');
@@ -219,5 +234,39 @@ class SalesReportService
         $totalLeakage = $rows->sum('value_leakage');
 
         return ['rows' => $rows, 'total_leakage' => $totalLeakage];
+    }
+
+    public function getSalesExtremes(array $f): array
+    {
+        $rows = DB::table('sales_bills as sb')
+            ->when(true, fn ($q) => $this->applyBillFilters($q, $f))
+            ->selectRaw('
+            DATE(sb.created_at) as sale_date,
+            SUM(sb.total_amount) as total_sales
+        ')
+            ->groupBy(DB::raw('DATE(sb.created_at)'))
+            ->orderBy('sale_date')
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return [
+                'highest_day' => null,
+                'lowest_day' => null,
+            ];
+        }
+
+        $highest = $rows->sortByDesc('total_sales')->first();
+        $lowest = $rows->sortBy('total_sales')->first();
+
+        return [
+            'highest_day' => [
+                'date' => $highest->sale_date,
+                'sales' => (float) $highest->total_sales,
+            ],
+            'lowest_day' => [
+                'date' => $lowest->sale_date,
+                'sales' => (float) $lowest->total_sales,
+            ],
+        ];
     }
 }

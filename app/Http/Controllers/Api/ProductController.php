@@ -39,7 +39,6 @@ class ProductController extends Controller
                     })
                     ->orderBy('expiry_date', 'asc');
             }])
-            // Total available stock
             ->addSelect([
                 'total_stock' => Inventory::selectRaw('COALESCE(SUM(qty - sold_qty), 0)')
                     ->whereColumn('inventories.product_id', 'products.id')
@@ -57,21 +56,44 @@ class ProductController extends Controller
                     ->whereColumn('inventories.sold_qty', '<', 'inventories.qty')
                     ->where('inventories.expiry_date', '>=', now()->toDateString()),
             ])
-            ->when(! $showOutOfStock, function ($q) {
-                $q->havingRaw('total_stock > 0');
-            })
-            ->orderByRaw('nearest_expiry IS NULL, nearest_expiry ASC') // fixed: DESC tha, ASC hona chahiye
+            ->orderByRaw('nearest_expiry IS NULL, nearest_expiry ASC')
             ->get();
 
+        if (! $showOutOfStock) {
+            $products = $products->filter(function ($product) {
+                return (float) $product->total_stock > 0;
+            })->values();
+        }
+
         $products = $products->map(function ($product) {
-            $prices = $product->inventories->pluck('selling_price')->filter();
+            $batches = $product->inventories->map(function ($inv) {
+                return [
+                    'id' => $inv->id,
+                    'batch_no' => $inv->batch_no,
+                    'mrp' => $inv->mrp,
+                    'cost_price' => $inv->cost_price,
+                    'selling_price' => $inv->selling_price,
+                    'qty_available' => $inv->qty - $inv->sold_qty,
+                    'expiry_date' => $inv->expiry_date,
+                    'is_opening' => $inv->is_opening,
+                    'batch_barcode' => $inv->batch_barcode,
+                    'free' => $inv->free,
+                    'qty' => $inv->qty,
+                    'sold_qty' => $inv->sold_qty,
+                ];
+            })->values();
 
-            $product->min_price = $prices->min();
-            $product->max_price = $prices->max();
-            $product->has_multiple_prices = $prices->unique()->count() > 1;
-            $product->batch_count = $product->inventories->count();
+            $prices = $batches->pluck('selling_price')->filter(fn ($p) => ! is_null($p));
 
-            return $product;
+            $data = $product->toArray();
+            $data['min_price'] = $prices->min();
+            $data['max_price'] = $prices->max();
+            $data['has_multiple_prices'] = $prices->unique()->count() > 1;
+            $data['batch_count'] = $batches->count();
+            $data['batches'] = $batches;
+            unset($data['inventories']);
+
+            return $data;
         });
 
         return response()->json([

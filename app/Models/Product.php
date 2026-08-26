@@ -53,8 +53,8 @@ class Product extends Model
     /**
      * Get the total available stock by summing inventory batches.
      */
-    public function getTotalStockAttribute()
-    {
-        return $this->inventories()->sum(DB::raw('qty - sold_qty'));
-    }
+    // public function getTotalStockAttribute()
+    // {
+    //     return $this->inventories()->sum(DB::raw('qty - sold_qty'));
+    // }
 }

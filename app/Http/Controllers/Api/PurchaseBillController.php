@@ -141,11 +141,11 @@ class PurchaseBillController extends Controller
 
     private function generateInwardNumber($branchId)
     {
-        // Financial Year prefix (Optional, e.g., 2425)
+        // Financial Year prefix (e.g., 2425)
         $fy = date('m') >= 4 ? date('y').(date('y') + 1) : (date('y') - 1).date('y');
 
-        // Previous maximum sequence value lookup
-        $lastSequence = PurchaseBill::where('branch_id', $branchId)
+        $lastSequence = PurchaseBill::withTrashed() 
+            ->where('branch_id', $branchId)
             ->max('inward_sequence') ?? 0;
 
         $nextSequence = $lastSequence + 1;
