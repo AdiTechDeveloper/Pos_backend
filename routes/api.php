@@ -202,6 +202,9 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     Route::post('/customers/advance', [CustomerController::class, 'addAdvance']);
     Route::get('/customers/wallet-balance/{mobile}', [CustomerController::class, 'walletBalance']);
     Route::get('/customers/{id}/wallet-history', [CustomerController::class, 'walletHistory']);
+
+    // Payment method change
+    Route::post('/sales-bills/{id}/change-payment', [SalesBillController::class, 'changePayment']);
 });
 
 // Report routes

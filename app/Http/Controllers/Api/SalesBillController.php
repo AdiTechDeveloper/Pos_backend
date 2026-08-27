@@ -99,6 +99,7 @@ class SalesBillController extends Controller
                 'user',
                 'lines.product',
                 'lines',
+                'payments'
             ])->orderBy('id', 'desc');
 
             if ($user->role === 'cashier') {
@@ -139,6 +140,7 @@ class SalesBillController extends Controller
             $bill = SalesBill::with([
                 'lines.product',
                 'lines',
+                'payments'
             ])->find($id);
 
             if (! $bill) {
@@ -1004,6 +1006,106 @@ class SalesBillController extends Controller
                     'remaining_amount' => $remaining,
                     'breakdown' => $paymentBreakdown,
                 ],
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function changePayment(Request $request, $id)
+    {
+        $request->validate([
+            'payments' => 'required|array|min:1',
+            'payments.*.method' => 'required|string|in:cash,online,wallet',
+            'payments.*.amount' => 'required|numeric|min:0.01',
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            $bill = SalesBill::lockForUpdate()->findOrFail($id);
+
+            // Restriction: Only same day edit
+            if ($bill->created_at->lt(now()->startOfDay())) {
+                throw new \Exception('Old bill payment cannot be edited');
+            }
+
+            // Reverse old payments
+            $oldPayments = SalesBillPayment::where('sales_bill_id', $bill->id)->get();
+
+            foreach ($oldPayments as $payment) {
+                $payment->update([
+                    'status' => 'reversed',
+                    'remarks' => 'Edited',
+                    'updated_by' => auth()->id(),
+                ]);
+            }
+
+            // Reset bill
+            $bill->paid_amount = 0;
+            $bill->due_amount = $bill->total_amount;
+            $bill->cash_received = 0;
+            $bill->online_received = 0;
+
+            $totalPaid = 0;
+            $cashSum = 0;
+            $onlineSum = 0;
+
+            // Apply new payments (supports split)
+            foreach ($request->payments as $p) {
+
+                SalesBillPayment::create([
+                    'sales_bill_id' => $bill->id,
+                    'method' => $p['method'],
+                    'amount' => $p['amount'],
+                    'status' => 'success',
+                    'payment_phase' => 'adjustment',
+                    'created_by' => auth()->id(),
+                ]);
+
+                $totalPaid += $p['amount'];
+
+                if ($p['method'] === 'cash') {
+                    $cashSum += $p['amount'];
+                } elseif ($p['method'] === 'online') {
+                    $onlineSum += $p['amount'];
+                }
+            }
+
+            // Prevent overpayment
+            if ($totalPaid > $bill->total_amount) {
+                throw new \Exception('Payment exceeds bill amount');
+            }
+
+            // Update totals
+            $bill->paid_amount = $totalPaid;
+            $bill->due_amount = $bill->total_amount - $totalPaid;
+            $bill->cash_received = $cashSum;
+            $bill->online_received = $onlineSum;
+
+            // Status
+            if ($bill->due_amount == 0) {
+                $bill->payment_status = 'paid';
+            } elseif ($totalPaid > 0) {
+                $bill->payment_status = 'partial';
+            } else {
+                $bill->payment_status = 'unpaid';
+            }
+
+            $bill->save();
+
+            DB::commit();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Payment updated successfully',
+                'bill' => $bill->load('payments'),
             ]);
 
         } catch (\Exception $e) {
