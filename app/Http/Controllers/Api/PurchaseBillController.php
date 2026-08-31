@@ -10,6 +10,7 @@ use App\Models\ItcEntry;
 use App\Models\Product;
 use App\Models\PurchaseBill;
 use App\Models\PurchaseLine;
+use App\Models\PurchasePayment;
 use App\Models\Store;
 use App\Models\Supplier;
 use Illuminate\Http\Request;
@@ -60,7 +61,7 @@ class PurchaseBillController extends Controller
         }
     }
 
-    public function show($id)
+    public function show(int $id)
     {
         try {
             $user = Auth::user();
@@ -70,6 +71,7 @@ class PurchaseBillController extends Controller
                 'supplier:id,name',
                 'lines.product:id,name,sku',
                 'lines.inventory',
+                'payments' => fn ($query) => $query->where('status', 'success'),
             ])->find($id);
 
             if (! $bill) {
@@ -79,15 +81,11 @@ class PurchaseBillController extends Controller
                 ], 404);
             }
 
-            if ($user->role === 'admin') {
-                if ($bill->store_id != $user->store_id) {
-                    return response()->json([
-                        'status' => false,
-                        'message' => 'Unauthorized - Admin can only access purchase bills of their own store',
-                    ], 403);
-                }
-
-                return response()->json(['status' => true, 'data' => $bill]);
+            if ($user->role === 'admin' && $bill->store_id != $user->store_id) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Unauthorized - Admin can only access purchase bills of their own store',
+                ], 403);
             }
 
             if ($user->role === 'manager') {
@@ -106,7 +104,40 @@ class PurchaseBillController extends Controller
                         'message' => 'Unauthorized - Manager can access purchase bills of their assigned branch only',
                     ], 403);
                 }
+            }
 
+            if (! in_array($user->role, ['admin', 'manager'], true)) {
+                return response()->json(['status' => false, 'message' => 'Unauthorized'], 403);
+            }
+
+            $totalPaid = round((float) PurchasePayment::where('purchase_bill_id', $bill->id)
+                ->where('status', 'success')
+                ->sum('amount'), 2);
+            $totalAmount = round((float) $bill->total_amount, 2);
+
+            $dueAmount = max(0, round($totalAmount - $totalPaid, 2));
+
+            // Payment status
+            $status = 'due';
+
+            if ($totalPaid == 0) {
+                $status = 'due';
+            } elseif ($totalPaid < $totalAmount) {
+                $status = 'partial';
+            } else {
+                $status = 'paid';
+            }
+
+            // Set the response values explicitly so reversed ledger rows cannot be counted.
+            $bill->setAttribute('paid_amount', $totalPaid);
+            $bill->setAttribute('due_amount', $dueAmount);
+            $bill->payment_status = $status;
+
+            if ($user->role === 'admin') {
+                return response()->json(['status' => true, 'data' => $bill]);
+            }
+
+            if ($user->role === 'manager') {
                 return response()->json(['status' => true, 'data' => $bill]);
             }
 
@@ -119,7 +150,7 @@ class PurchaseBillController extends Controller
         }
     }
 
-    public function generateBatchNo($productId)
+    public function generateBatchNo(int $productId)
     {
         $date = now()->format('Ymd');
 
@@ -139,12 +170,12 @@ class PurchaseBillController extends Controller
         return "POS-{$productId}-{$date}-{$nextNumber}";
     }
 
-    private function generateInwardNumber($branchId)
+    private function generateInwardNumber(int $branchId)
     {
         // Financial Year prefix (e.g., 2425)
         $fy = date('m') >= 4 ? date('y').(date('y') + 1) : (date('y') - 1).date('y');
 
-        $lastSequence = PurchaseBill::withTrashed() 
+        $lastSequence = PurchaseBill::withTrashed()
             ->where('branch_id', $branchId)
             ->max('inward_sequence') ?? 0;
 
@@ -415,6 +446,12 @@ class PurchaseBillController extends Controller
             'lines.*.discount' => 'nullable|numeric|min:0',
             'lines.*.discount_type' => 'nullable|string|in:percent,fixed',
             'lines.*.is_opening' => 'sometimes|in:0,1',
+
+            'payments' => 'nullable|array',
+            'payments.*.amount' => 'required_with:payments|numeric|min:0.01',
+            'payments.*.method' => 'required_with:payments|string|in:cash,online,bank',
+            'payments.*.reference' => 'nullable|string|max:255',
+            'payments.*.payment_date' => 'nullable|date',
         ]);
 
         try {
@@ -629,8 +666,28 @@ class PurchaseBillController extends Controller
                 $totals['igst'] += $igst;
             }
 
+            $totalPaid = 0;
+
+            if (! empty($validated['payments'])) {
+                foreach ($validated['payments'] as $payment) {
+
+                    $amount = (float) $payment['amount'];
+
+                    PurchasePayment::create([
+                        'purchase_bill_id' => $bill->id,
+                        'amount' => $amount,
+                        'method' => $payment['method'],
+                        'reference' => $payment['reference'] ?? null,
+                        'payment_date' => $payment['payment_date'] ?? now(),
+                    ]);
+
+                    $totalPaid += $amount;
+                }
+            }
+
             $totalTax = $totals['cgst'] + $totals['sgst'] + $totals['igst'];
             $calculatedGrandTotal = round($totals['taxable'] + $totalTax, 2);
+            $dueAmount = max(0, $calculatedGrandTotal - $totalPaid);
 
             // 5. Final Bill Summary Update
             $bill->update([
@@ -640,7 +697,7 @@ class PurchaseBillController extends Controller
                 'igst_amount' => $totals['igst'],
                 'total_tax' => $totalTax,
                 'total_amount' => $calculatedGrandTotal,
-                'received' => true,
+                'received' => $dueAmount == 0, // fully paid or not
             ]);
 
             DB::commit();
@@ -887,7 +944,7 @@ class PurchaseBillController extends Controller
     //     }
     // }
 
-    public function update(Request $request, $id)
+    public function update(Request $request, int $id)
     {
         $request->validate([
             'supplier_id' => 'required|integer',
@@ -910,6 +967,18 @@ class PurchaseBillController extends Controller
             'lines.*.discount' => 'nullable|numeric|min:0',
             'lines.*.discount_type' => 'nullable|in:percent,fixed',
             'lines.*.hsn_code' => 'nullable|string',
+            'lines.*.is_opening' => 'sometimes|in:0,1',
+            'payments' => 'sometimes|nullable|array',
+            'payments.*.id' => [
+                'nullable',
+                'integer',
+                \Illuminate\Validation\Rule::exists('purchase_payments', 'id')
+                    ->where(fn ($query) => $query->where('purchase_bill_id', $id)),
+            ],
+            'payments.*.amount' => 'required_with:payments|numeric|min:0.01',
+            'payments.*.method' => 'required_with:payments|string|in:cash,online,bank',
+            'payments.*.reference' => 'nullable|string|max:255',
+            'payments.*.payment_date' => 'nullable|date',
         ]);
 
         DB::beginTransaction();
@@ -918,6 +987,39 @@ class PurchaseBillController extends Controller
             $bill = PurchaseBill::with('lines.inventory')->findOrFail($id);
             $branchId = $bill->branch_id;
             $user = Auth::user();
+            $supplier = Supplier::findOrFail($request->supplier_id);
+            $branch = Branch::findOrFail($branchId);
+            $originState = $user->role === 'admin'
+                ? Store::findOrFail($user->store_id)->state
+                : $branch->state;
+            $isIntra = $originState === $supplier->state;
+
+            if ($user->role === 'admin' && $bill->store_id != $user->store_id) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Unauthorized - Admin can only update purchase bills of their own store',
+                ], 403);
+            }
+
+            if ($user->role === 'manager') {
+                if ($bill->store_id != $user->store_id) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'Unauthorized - Manager can update only their store purchase bills',
+                    ], 403);
+                }
+
+                if (! $user->branches()->whereKey($branchId)->exists()) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'Unauthorized - Manager can update purchase bills of their assigned branch only',
+                    ], 403);
+                }
+            }
+
+            if (! in_array($user->role, ['admin', 'manager'], true)) {
+                return response()->json(['status' => false, 'message' => 'Unauthorized'], 403);
+            }
 
             // STEP 1: Delete only unsold inventory items tied to this bill
             foreach ($bill->lines as $oldLine) {
@@ -965,16 +1067,15 @@ class PurchaseBillController extends Controller
                     // De-escalate tax rate component back to clean item net-rate
                     $cleanRateWithoutTax = $enteredRate / (1 + ($gstRate / 100));
 
-                    $gross = $qty * $cleanRateWithoutTax;
+                    $gross = round($qty * $cleanRateWithoutTax, 2);
                     $discountAmount = $discountType === 'percent'
-                        ? round($gross * $discount / 100, 4)
-                        : round($discount, 4);
+                        ? round($gross * $discount / 100, 2)
+                        : round($discount, 2);
 
                     $taxable = round(max(0, $gross - $discountAmount), 2);
-                    $totalTaxValue = round(($qty * $enteredRate) - ($discountType === 'percent' ? ($qty * $enteredRate * $discount / 100) : $discount), 2) - $taxable;
+                    $totalTaxValue = round(($taxable * $gstRate) / 100, 2);
 
-                    // Set adjusted standalone landing rate for accurate dynamic inventory tracking
-                    $inventoryCostRate = round($taxable / $qty, 4);
+                    $inventoryCostRate = round($cleanRateWithoutTax, 4);
                 } else {
                     // Traditional exclusive transaction calculation pipeline
                     $gross = $qty * $enteredRate;
@@ -987,11 +1088,6 @@ class PurchaseBillController extends Controller
 
                     $inventoryCostRate = $enteredRate;
                 }
-
-                // Route CGST / SGST vs IGST structures
-                $storeState = $user->store->state;
-                $branchState = $user->branches->first()->state;
-                $isIntra = $storeState === $branchState;
 
                 if ($isIntra) {
                     $cgst = round($totalTaxValue / 2, 2);
@@ -1030,6 +1126,7 @@ class PurchaseBillController extends Controller
                     'total_gst' => $totalGst,
                     'batch_no' => $batchNo,
                     'expiry_date' => $line['expiry_date'] ?? null,
+                    'is_opening' => (int) ($line['is_opening'] ?? 0),
                 ]);
 
                 // Setup or link Barcodes safely
@@ -1055,6 +1152,7 @@ class PurchaseBillController extends Controller
                     'rate' => $inventoryCostRate,
                     'amount' => $taxable,
                     'expiry_date' => $line['expiry_date'] ?? null,
+                    'is_opening' => (int) ($line['is_opening'] ?? 0),
                 ]);
 
                 // Repopulate Free Promotional Stock Inventory
@@ -1075,6 +1173,7 @@ class PurchaseBillController extends Controller
                         'rate' => 0,
                         'amount' => 0,
                         'expiry_date' => $line['expiry_date'] ?? null,
+                        'is_opening' => (int) ($line['is_opening'] ?? 0),
                     ]);
                 }
 
@@ -1099,9 +1198,45 @@ class PurchaseBillController extends Controller
                 $processedProducts[] = $product->id;
             }
 
+            if ($request->has('payments')) {
+                // Treat the submitted list as the complete current payment split.
+                // Existing rows stay in the ledger but no longer count as paid.
+                PurchasePayment::where('purchase_bill_id', $bill->id)
+                    ->where('status', 'success')
+                    ->update([
+                        'status' => 'reversed',
+                        'updated_by' => $user->id,
+                        'remarks' => 'Reversed during purchase bill payment update',
+                    ]);
+
+                foreach ($request->payments ?? [] as $payment) {
+                    $amount = round((float) $payment['amount'], 2);
+
+                    PurchasePayment::create([
+                        'purchase_bill_id' => $bill->id,
+                        'amount' => $amount,
+                        'method' => $payment['method'],
+                        'reference' => $payment['reference'] ?? null,
+                        'payment_date' => $payment['payment_date'] ?? now(),
+                        'status' => 'success',
+                        'updated_by' => $user->id,
+                        'remarks' => 'Created during purchase bill payment update',
+                    ]);
+                }
+            }
+
+            $totalPaid = (float) PurchasePayment::where('purchase_bill_id', $bill->id)
+                ->where('status', 'success')
+                ->sum('amount');
+
             // STEP 4: Resolve Invoice Accounting Totals
             $totalTax = $totalCgst + $totalSgst + $totalIgst;
             $calculatedGrandTotal = round($totalTaxable + $totalTax, 2);
+            $dueAmount = max(0, round($calculatedGrandTotal - $totalPaid, 2));
+
+            if ($totalPaid > $calculatedGrandTotal) {
+                throw new \Exception('Payment exceeds bill amount');
+            }
 
             $bill->update([
                 'taxable_value' => $totalTaxable,
@@ -1110,7 +1245,7 @@ class PurchaseBillController extends Controller
                 'igst_amount' => $totalIgst,
                 'total_tax' => $totalTax,
                 'total_amount' => $calculatedGrandTotal,
-                'received' => 1,
+                'received' => $dueAmount == 0,
             ]);
 
             // STEP 5: Recalculate Master Stock Metrics & Weighted Valuation Average

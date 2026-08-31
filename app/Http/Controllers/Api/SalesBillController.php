@@ -26,10 +26,23 @@ class SalesBillController extends Controller
         $user = Auth::user();
         $branchIds = $user->branches->pluck('id')->toArray();
 
+        $barcode = trim($request->barcode);
+
         // Find product by manufacturer barcode
         $product = Product::with('gstRate')
-            ->where('barcode', $request->barcode)
+            ->where('barcode', $barcode)
+            ->where('store_id', $user->store_id)
             ->first();
+
+        if (! $product) {
+            $inventory = Inventory::where('batch_barcode', $barcode)
+                ->whereIn('branch_id', $branchIds)
+                ->first();
+
+            if ($inventory) {
+                $product = Product::with('gstRate')->find($inventory->product_id);
+            }
+        }
 
         if (! $product) {
             return response()->json(['status' => false, 'message' => 'Product not found'], 404);
@@ -52,7 +65,7 @@ class SalesBillController extends Controller
                 $q->whereNull('expiry_date')
                     ->orWhere('expiry_date', '>=', now()->toDateString());
             })
-            ->orderBy('expiry_date', 'asc') // FEFO: jaldi expire hone wali batch pehle
+            ->orderByRaw('expiry_date IS NULL, expiry_date ASC') // FEFO: jaldi expire hone wali batch pehle
             ->select('id', 'batch_no', 'batch_barcode', 'mrp', 'cost_price', 'selling_price', 'expiry_date', 'qty', 'sold_qty')
             ->get()
             ->groupBy('batch_barcode')
@@ -99,7 +112,7 @@ class SalesBillController extends Controller
                 'user',
                 'lines.product',
                 'lines',
-                'payments'
+                'payments',
             ])->orderBy('id', 'desc');
 
             if ($user->role === 'cashier') {
@@ -140,7 +153,7 @@ class SalesBillController extends Controller
             $bill = SalesBill::with([
                 'lines.product',
                 'lines',
-                'payments'
+                'payments',
             ])->find($id);
 
             if (! $bill) {

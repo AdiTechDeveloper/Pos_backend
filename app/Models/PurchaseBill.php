@@ -64,6 +64,11 @@ class PurchaseBill extends Model
         return $this->hasMany(Inventory::class);
     }
 
+    public function payments()
+    {
+        return $this->hasMany(PurchasePayment::class);
+    }
+
     protected static function booted()
     {
         static::deleting(function ($bill) {
@@ -79,5 +84,17 @@ class PurchaseBill extends Model
             $bill->itcEntries()->withTrashed()->restore();
             $bill->inventory()->withTrashed()->restore();
         });
+    }
+
+    protected $appends = ['paid_amount', 'due_amount'];
+
+    public function getPaidAmountAttribute()
+    {
+        return round((float) $this->payments()->where('status', 'success')->sum('amount'), 2);
+    }
+
+    public function getDueAmountAttribute()
+    {
+        return max(0, round((float) $this->total_amount - $this->paid_amount, 2));
     }
 }
