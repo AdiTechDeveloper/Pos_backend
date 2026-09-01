@@ -15,16 +15,19 @@ class SalesReportService
         $branchId = $input['branch_id'] ?? null;
 
         [$from, $to] = match ($range) {
-            'today' => [Carbon::today(), Carbon::today()->endOfDay()], // (keep if needed)
+            'today' => [
+                Carbon::today()->startOfDay(),
+                Carbon::today()->endOfDay(),
+            ],
 
             'yesterday' => [
-                Carbon::yesterday(),
+                Carbon::yesterday()->startOfDay(),
                 Carbon::yesterday()->endOfDay(),
             ],
 
             'last_7_days' => [
-                Carbon::now()->subDays(7)->startOfDay(),
-                Carbon::yesterday()->endOfDay(),
+                Carbon::now()->subDays(6)->startOfDay(),
+                Carbon::now()->endOfDay(),
             ],
 
             'custom' => [
@@ -34,7 +37,7 @@ class SalesReportService
 
             default => [
                 Carbon::now()->startOfMonth(),
-                Carbon::yesterday()->endOfDay(),
+                Carbon::now()->endOfDay(),
             ],
         };
 
@@ -108,6 +111,7 @@ class SalesReportService
     public function getInvoiceTable(array $f): array
     {
         $rows = DB::table('sales_bills as sb')
+            ->leftJoin('sales_bill_payments as sbp', 'sb.id', '=', 'sbp.sales_bill_id')
             ->when(true, fn ($q) => $this->applyBillFilters($q, $f))
             ->select([
                 'sb.id',
@@ -121,7 +125,22 @@ class SalesReportService
                 'sb.total_profit',
                 'sb.payment_status',
                 'sb.bill_status',
+                DB::raw('GROUP_CONCAT(DISTINCT sbp.method) as payment_methods'),
+                DB::raw('SUM(sbp.amount) as payment_total'),
             ])
+            ->groupBy(
+                'sb.id',
+                'sb.bill_no',
+                'sb.created_at',
+                'sb.subtotal',
+                'sb.total_gst',
+                'sb.total_amount',
+                'sb.paid_amount',
+                'sb.due_amount',
+                'sb.total_profit',
+                'sb.payment_status',
+                'sb.bill_status'
+            )
             ->orderByDesc('sb.created_at')
             ->get();
 
@@ -206,6 +225,59 @@ class SalesReportService
             'grand_total' => $grandTotal,
             'total_due' => $dueAmount?->total_due ?? 0,
         ];
+    }
+
+    public function getPaymentSummary(array $f): array
+    {
+        $rows = DB::table('sales_bills as sb')
+            ->leftJoin('sales_bill_payments as sbp', 'sb.id', '=', 'sbp.sales_bill_id')
+            ->when(true, fn ($q) => $this->applyBillFilters($q, $f))
+            ->select(
+                'sb.id',
+                'sb.bill_no',
+                DB::raw('GROUP_CONCAT(DISTINCT sbp.method) as methods'),
+                DB::raw('SUM(sbp.amount) as total_amount')
+            )
+            ->groupBy('sb.id', 'sb.bill_no')
+            ->get();
+
+        $result = [
+            'cash' => ['count' => 0, 'amount' => 0],
+            'online' => ['count' => 0, 'amount' => 0],
+            'wallet' => ['count' => 0, 'amount' => 0],
+            'split' => ['count' => 0, 'amount' => 0, 'bills' => []],
+        ];
+
+        foreach ($rows as $row) {
+            $methods = explode(',', $row->methods);
+
+            if (count($methods) > 1) {
+                // Split
+                $result['split']['count']++;
+                $result['split']['amount'] += $row->total_amount;
+                $result['split']['bills'][] = $row->bill_no;
+
+            } else {
+                $method = strtolower($methods[0]);
+
+                if ($method === 'cash') {
+                    $result['cash']['count']++;
+                    $result['cash']['amount'] += $row->total_amount;
+                }
+
+                if ($method === 'online') {
+                    $result['online']['count']++;
+                    $result['online']['amount'] += $row->total_amount;
+                }
+
+                if ($method === 'wallet') {
+                    $result['wallet']['count']++;
+                    $result['wallet']['amount'] += $row->total_amount;
+                }
+            }
+        }
+
+        return $result;
     }
 
     public function getPriceOverrides(array $f): array

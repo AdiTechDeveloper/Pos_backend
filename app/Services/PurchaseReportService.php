@@ -13,17 +13,29 @@ class PurchaseReportService
         $storeId = $input['store_id'] ?? null;
         $branchId = $input['branch_id'] ?? null;
         $supplierId = $input['supplier_id'] ?? null;
-        $isLost = $input['is_lost'] ?? null; // null = all, 1 = lost only, 0 = normal only
+        $isLost = $input['is_lost'] ?? null; 
 
         [$from, $to] = match ($range) {
-            'today' => [Carbon::today(), Carbon::today()->endOfDay()],
-            'yesterday' => [Carbon::yesterday(), Carbon::yesterday()->endOfDay()],
-            'last_7_days' => [Carbon::now()->subDays(6)->startOfDay(), Carbon::now()->endOfDay()],
-            'custom' => [
-                Carbon::parse($input['date_from'])->startOfDay(),
-                Carbon::parse($input['date_to'])->endOfDay(),
+            'today' => [
+                Carbon::today()->startOfDay(),
+                Carbon::today()->endOfDay(),
             ],
-            default => [Carbon::now()->startOfMonth(), Carbon::now()->endOfDay()], // this_month
+            'yesterday' => [
+                Carbon::yesterday()->startOfDay(),
+                Carbon::yesterday()->endOfDay(),
+            ],
+            'last_7_days' => [
+                Carbon::now()->subDays(6)->startOfDay(), // Today + previous 6 days = 7 days
+                Carbon::now()->endOfDay(),
+            ],
+            'custom' => [
+                ! empty($input['date_from']) ? Carbon::parse($input['date_from'])->startOfDay() : Carbon::now()->startOfMonth(),
+                ! empty($input['date_to']) ? Carbon::parse($input['date_to'])->endOfDay() : Carbon::now()->endOfDay(),
+            ],
+            default => [
+                Carbon::now()->startOfMonth()->startOfDay(), // this_month
+                Carbon::now()->endOfDay(),
+            ],
         };
 
         return compact('from', 'to', 'range', 'storeId', 'branchId', 'supplierId', 'isLost');

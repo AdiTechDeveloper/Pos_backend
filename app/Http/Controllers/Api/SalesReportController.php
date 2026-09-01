@@ -31,6 +31,7 @@ class SalesReportController extends Controller
             'invoices' => $this->service->getInvoiceTable($filters),
             'products' => $this->service->getProductPerformance($filters),
             'payment_methods' => $this->service->getPaymentMethods($filters),
+            'summary' => $this->service->getPaymentSummary($filters),
             'price_overrides' => $this->service->getPriceOverrides($filters),
             'sales_extremes' => $this->service->getSalesExtremes($filters),
             'filters_applied' => $filters,

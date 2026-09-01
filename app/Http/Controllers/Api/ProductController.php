@@ -5,12 +5,74 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Inventory;
 use App\Models\Product;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Milon\Barcode\Facades\DNS1DFacade as DNS1D;
 
 class ProductController extends Controller
 {
+    public function getAllProducts(Request $request)
+    {
+        $user = Auth::user();
+        $role = $user->role;
+        $storeId = $user->store_id;
+
+        $query = Product::where('store_id', $storeId)->with('brand', 'category', 'gstRate');
+
+        if ($role === 'manager') {
+            $assignedBranchIds = DB::table('branch_staff')
+                ->where('user_id', $user->id)
+                ->pluck('branch_id')
+                ->toArray();
+
+            if (empty($assignedBranchIds)) {
+                return response()->json(['status' => true, 'products' => []], 200);
+            }
+
+            if ($request->filled('branch_id')) {
+                $requestedBranchId = (int) $request->branch_id;
+
+                if (! in_array($requestedBranchId, $assignedBranchIds)) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'Unauthorized access to this branch products.',
+                    ], 403);
+                }
+
+                $targetBranchIds = [$requestedBranchId];
+            } else {
+                $targetBranchIds = $assignedBranchIds;
+            }
+
+            $staffUserIds = DB::table('branch_staff')
+                ->whereIn('branch_id', $targetBranchIds)
+                ->pluck('user_id')
+                ->toArray();
+
+            $query->whereIn('created_by', $staffUserIds);
+        } elseif ($role === 'admin') {
+            if ($request->filled('branch_id')) {
+                $requestedBranchId = $request->branch_id;
+
+                $staffUserIds = DB::table('branch_staff')
+                    ->where('branch_id', $requestedBranchId)
+                    ->pluck('user_id')
+                    ->toArray();
+
+                $query->whereIn('created_by', $staffUserIds);
+            }
+        }
+
+        $products = $query->get();
+
+        return response()->json([
+            'status' => true,
+            'products' => $products,
+        ], 200);
+    }
+
     public function index(Request $request)
     {
         $user = Auth::user();
@@ -323,5 +385,176 @@ class ProductController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    public function getExpiredStock(Request $request)
+    {
+        $user = Auth::user();
+
+        if (! in_array($user->role, ['admin', 'manager'], true)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized',
+                'data' => [],
+                'total_loss' => 0,
+            ], 403);
+        }
+
+        $range = $request->input('date_range', 'all');
+        $fromDate = null;
+        $toDate = null;
+
+        if ($range === 'custom') {
+            if ($request->filled('date_from')) {
+                $fromDate = Carbon::parse($request->date_from)->startOfDay();
+            }
+            if ($request->filled('date_to')) {
+                $toDate = Carbon::parse($request->date_to)->endOfDay();
+            }
+        } elseif ($range !== 'all') {
+            [$fromDate, $toDate] = match ($range) {
+                'today' => [
+                    Carbon::today()->startOfDay(),
+                    Carbon::today()->endOfDay(),
+                ],
+                'yesterday' => [
+                    Carbon::yesterday()->startOfDay(),
+                    Carbon::yesterday()->endOfDay(),
+                ],
+                'last_7_days' => [
+                    Carbon::now()->subDays(6)->startOfDay(),
+                    Carbon::now()->endOfDay(),
+                ],
+                'this_month' => [
+                    Carbon::now()->startOfMonth()->startOfDay(),
+                    Carbon::now()->endOfDay(),
+                ],
+                default => [null, null],
+            };
+        }
+
+        if ($request->filled('from_date')) {
+            $fromDate = Carbon::parse($request->from_date)->startOfDay();
+        }
+
+        if ($request->filled('to_date')) {
+            $toDate = Carbon::parse($request->to_date)->endOfDay();
+        }
+
+        if ($fromDate && ! $toDate) {
+            $toDate = Carbon::now()->endOfDay();
+        }
+
+        if (! $fromDate && $toDate) {
+            $fromDate = Carbon::create(2000, 1, 1)->startOfDay();
+        }
+
+        if ($user->role === 'admin') {
+            $branchQuery = DB::table('branches')->where('store_id', $user->store_id);
+
+            if ($request->filled('branch_id')) {
+                $requestedBranchId = (int) $request->branch_id;
+                $branchExists = $branchQuery->where('id', $requestedBranchId)->exists();
+
+                if (! $branchExists) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'This branch does not belong to your store',
+                        'data' => [],
+                        'total_loss' => 0,
+                    ], 403);
+                }
+
+                $branchIds = [$requestedBranchId];
+            } else {
+                $branchIds = $branchQuery->pluck('id')->toArray();
+            }
+        } else {
+            $branchIds = $user->branches()->pluck('branches.id')->toArray();
+
+            if ($request->filled('branch_id')) {
+                $requestedBranchId = (int) $request->branch_id;
+
+                if (! in_array($requestedBranchId, $branchIds, true)) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'This branch is not assigned to you',
+                        'data' => [],
+                        'total_loss' => 0,
+                    ], 403);
+                }
+
+                $branchIds = [$requestedBranchId];
+            }
+        }
+
+        if (empty($branchIds)) {
+            return response()->json([
+                'status' => true,
+                'message' => 'No branch available for this user',
+                'data' => [],
+                'total_loss' => 0,
+            ], 200);
+        }
+
+        $query = Inventory::with('product:id,name', 'branch:id,name')
+            ->whereIn('branch_id', $branchIds)
+            ->whereNotNull('expiry_date')
+            ->whereColumn('sold_qty', '<', 'qty');
+
+        if ($fromDate) {
+            $query->whereDate('expiry_date', '>=', $fromDate->toDateString());
+        }
+
+        if ($toDate) {
+            $query->whereDate('expiry_date', '<=', $toDate->toDateString());
+        }
+
+        if (! $fromDate && ! $toDate) {
+            $query->where('expiry_date', '<', now()->toDateString());
+        } else {
+            $query->where('expiry_date', '<=', now()->toDateString());
+        }
+
+        $expiredBatches = $query
+            ->select(
+                'id',
+                'product_id',
+                'branch_id',
+                'batch_no',
+                'batch_barcode',
+                'expiry_date',
+                'cost_price',
+                'selling_price',
+                'qty',
+                'sold_qty'
+            )
+            ->get()
+            ->map(function ($item) {
+                $expiredQty = $item->qty - $item->sold_qty;
+
+                return [
+                    'id' => $item->id,
+                    'product_id' => $item->product_id,
+                    'product_name' => $item->product->name ?? '—',
+                    'branch_id' => $item->branch_id,
+                    'branch_name' => $item->branch->name ?? '—',
+                    'batch_no' => $item->batch_no,
+                    'batch_barcode' => $item->batch_barcode,
+                    'expiry_date' => $item->expiry_date,
+                    'expired_qty' => $expiredQty,
+                    'cost_price' => $item->cost_price,
+                    'loss_amount' => $expiredQty * $item->cost_price,
+                ];
+            });
+
+        return response()->json([
+            'status' => true,
+            'data' => $expiredBatches,
+            'total_loss' => $expiredBatches->sum('loss_amount'),
+            'branch_id' => $request->branch_id ?? 'all',
+            'from_date' => $fromDate?->toDateString(),
+            'to_date' => $toDate?->toDateString(),
+        ]);
     }
 }

@@ -50,6 +50,11 @@ class Product extends Model
         return $this->hasMany(Inventory::class, 'product_id', 'id');
     }
 
+    public function branches()
+    {
+        return $this->belongsToMany(Branch::class, 'branch_id');
+    }
+
     /**
      * Get the total available stock by summing inventory batches.
      */

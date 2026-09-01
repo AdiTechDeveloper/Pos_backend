@@ -146,12 +146,16 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
 
 // Product routes
 Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(function () {
+    Route::get('/all-products', [ProductController::class, 'getAllProducts']);
     Route::get('/products', [ProductController::class, 'index']);
     Route::get('/products/{id}', [ProductController::class, 'show']);
     Route::post('/products', [ProductController::class, 'store']);
     Route::put('/products/{id}', [ProductController::class, 'update']);
     Route::delete('/products/{id}', [ProductController::class, 'destroy']);
     Route::get('/products/{id}/barcode', [ProductController::class, 'barcodeImage']);
+
+    // Expired products (Discart)
+    Route::get('/expired-products', [ProductController::class, 'getExpiredStock']);
 });
 
 // Purchasebill routes
