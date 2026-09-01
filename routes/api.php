@@ -250,3 +250,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/staff/register-status', [StaffController::class, 'getRegisterStatus']);
     Route::post('/staff/open-register', [StaffController::class, 'openRegister']);
 });
+
+Route::put(
+    '/inventory/{inventoryId}/selling-price',
+    [ProductController::class, 'updateSellingPrice']
+);
+
+
+Route::get(
+    '/reports/advance-payments',
+    [CustomerController::class, 'advanceReport']
+);

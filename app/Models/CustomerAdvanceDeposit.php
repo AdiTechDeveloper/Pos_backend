@@ -24,4 +24,14 @@ class CustomerAdvanceDeposit extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+    public function receivedBy()
+    {
+        return $this->belongsTo(User::class, 'received_by');
+    }
+
+    public function branch()
+    {
+        return $this->belongsTo(Branch::class);
+    }
 }

@@ -111,4 +111,27 @@ class CustomerController extends Controller
             'data' => $transactions,
         ]);
     }
+
+    public function advanceReport()
+{
+    try {
+        $deposits = CustomerAdvanceDeposit::with([
+            'customer:id,name,mobile',
+            'receivedBy:id,name',
+            'branch:id,name',
+        ])
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return response()->json([
+            'status' => true,
+            'data' => $deposits,
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => false,
+            'message' => $e->getMessage(),
+        ], 500);
+    }
+}
 }
