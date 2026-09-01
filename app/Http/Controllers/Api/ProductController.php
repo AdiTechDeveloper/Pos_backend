@@ -145,6 +145,7 @@ class ProductController extends Controller
                 'name' => 'required|string',
                 'sku' => 'nullable|string|unique:products,sku',
                 'barcode' => 'nullable|string', // This will be the Manufacturer barcode if scanned
+                'is_price_override' => 'nullable|boolean',
             ]);
 
             $user = Auth::user();
@@ -181,6 +182,7 @@ class ProductController extends Controller
                 'hsn_code' => $request->hsn_code,
                 'gst_rate_id' => $request->gst_rate_id,
                 'gst_inclusive' => $request->gst_inclusive ?? 0,
+                'is_price_override' => $request->input('is_price_override', 0),
                 'created_by' => Auth::id(),
             ]);
 
@@ -203,6 +205,7 @@ class ProductController extends Controller
         try {
             $request->validate([
                 'name' => 'required|string',
+                'is_price_override' => 'nullable|boolean',
             ]);
 
             $user = Auth::user();
@@ -233,6 +236,7 @@ class ProductController extends Controller
                 'hsn_code' => $request->hsn_code,
                 'gst_rate_id' => $request->gst_rate_id,
                 'gst_inclusive' => $request->gst_inclusive ?? 0,
+                'is_price_override' => $request->input('is_price_override', 0),
                 'updated_by' => Auth::id(),
             ]);
 
@@ -245,6 +249,69 @@ class ProductController extends Controller
             return response()->json([
                 'status' => false,
                 'message' => 'An error occurred while updating the product',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function updateSellingPrice(Request $request, $inventoryId)
+    {
+        try {
+            $request->validate([
+                'selling_price' => 'required|numeric|min:0.01',
+            ]);
+
+            // Find inventory
+            $inventory = Inventory::with('product')->find($inventoryId);
+
+            if (! $inventory) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Inventory not found',
+                ], 404);
+            }
+
+            // Check is_override from PRODUCTS table
+            $product = $inventory->product;
+
+            if (! $product) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Product not found',
+                ], 404);
+            }
+
+            // Product must have is_override = 1
+            if ((int) $product->is_price_override !== 1) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Price override is not allowed for this product',
+                    'is_price_override' => 0,
+                ], 403);
+            }
+
+            // Update price in INVENTORY table
+            $inventory->selling_price = $request->selling_price;
+            $inventory->save();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Selling price updated successfully',
+
+                'inventory_id' => $inventory->id,
+                'product_id' => $product->id,
+
+                // Updated inventory price
+                'selling_price' => (float) $inventory->selling_price,
+
+                // From PRODUCTS table
+                'is_price_override' => (int) $product->is_price_override,
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to update selling price',
                 'error' => $e->getMessage(),
             ], 500);
         }

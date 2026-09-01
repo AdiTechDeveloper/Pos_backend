@@ -23,6 +23,7 @@ class Product extends Model
         'updated_by',
         'stock',
         'gst_inclusive',
+        'is_price_override',
     ];
 
     public function store()
