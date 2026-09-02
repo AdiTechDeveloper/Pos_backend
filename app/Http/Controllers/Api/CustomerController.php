@@ -112,26 +112,27 @@ class CustomerController extends Controller
         ]);
     }
 
-    public function advanceReport()
-{
-    try {
-        $deposits = CustomerAdvanceDeposit::with([
-            'customer:id,name,mobile',
-            'receivedBy:id,name',
-            'branch:id,name',
-        ])
-            ->orderBy('created_at', 'desc')
-            ->get();
+    public function advanceReport(Request $request)
+    {
+        try {
+            $deposits = CustomerAdvanceDeposit::with([
+                'customer:id,name,mobile,opening_balance',
+                'receivedBy:id,name',
+                'branch:id,name',
+            ])
+                ->orderBy('created_at', 'desc')
+                ->get();
 
-        return response()->json([
-            'status' => true,
-            'data' => $deposits,
-        ]);
-    } catch (\Exception $e) {
-        return response()->json([
-            'status' => false,
-            'message' => $e->getMessage(),
-        ], 500);
+            return response()->json([
+                'status' => true,
+                'data' => $deposits,
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
     }
-}
 }
