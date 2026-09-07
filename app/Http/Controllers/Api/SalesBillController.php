@@ -237,6 +237,7 @@ class SalesBillController extends Controller
             'customer' => 'required|array',
             'customer.name' => 'nullable|string|max:255',
             'customer.mobile' => 'required|string|max:15',
+            'branch_id' => 'nullable|integer',
             'payment_type' => 'required|in:cash,online,split,credit,wallet',
             'cash_received' => 'nullable|numeric|min:0',
             'online_received' => 'nullable|numeric|min:0',
@@ -251,7 +252,7 @@ class SalesBillController extends Controller
             DB::beginTransaction();
 
             $user = Auth::user();
-            $branchId = $user->branches->pluck('id')->first();
+            $branchId = $this->resolveCustomerBranchId($request->branch_id, $user);
 
             if (! $branchId) {
                 return response()->json([
@@ -487,7 +488,10 @@ class SalesBillController extends Controller
             ]);
 
             $customer = Customer::updateOrCreate(
-                ['mobile' => $request->customer['mobile']],
+                [
+                    'branch_id' => $branchId,
+                    'mobile' => $request->customer['mobile'],
+                ],
                 [
                     'name' => $request->customer['name'] ?? null,
                     'add1' => $request->customer['add1'] ?? null,
@@ -770,15 +774,28 @@ class SalesBillController extends Controller
 
     public function customerWithDue()
     {
+        $user = Auth::user();
+        $branchIds = $this->allowedCustomerBranchIds($user);
+
         $customers = SalesBill::select([
             'customer_id',
             DB::raw('SUM(due_amount) as total_due'),
         ])
             ->whereNotNull('customer_id')
             ->where('due_amount', '>', 0)
+            ->whereHas('customer', function ($query) use ($branchIds) {
+                $query->whereIn('branch_id', $branchIds);
+                if (Auth::user()->role === 'admin' && request()->filled('branch_id')) {
+                    $query->where('branch_id', request('branch_id'));
+                }
+            })
             ->groupBy('customer_id')
-            ->with('customer:id,name,mobile')
+            ->with('customer:id,branch_id,name,mobile')
             ->get();
+
+        if ($user->role === 'admin' && request()->filled('branch_id')) {
+            abort_unless(in_array((int) request('branch_id'), $branchIds, true), 403, 'Invalid branch');
+        }
 
         return response()->json([
             'status' => true,
@@ -786,9 +803,18 @@ class SalesBillController extends Controller
         ]);
     }
 
-    public function customerDue(int $customerMobile)
+    public function customerDue(string $customerMobile)
     {
-        $customer = Customer::where('mobile', $customerMobile)->first();
+        $user = Auth::user();
+        $branchIds = $this->allowedCustomerBranchIds($user);
+        $customerQuery = Customer::whereIn('branch_id', $branchIds)->where('mobile', $customerMobile);
+
+        if ($user->role === 'admin' && request()->filled('branch_id')) {
+            abort_unless(in_array((int) request('branch_id'), $branchIds, true), 403, 'Invalid branch');
+            $customerQuery->where('branch_id', request('branch_id'));
+        }
+
+        $customer = $customerQuery->first();
 
         if (! $customer) {
             return response()->json(['customer' => null]);
@@ -802,6 +828,25 @@ class SalesBillController extends Controller
             'customer' => $customer,
             'total_due' => $totalDue,
         ]);
+    }
+
+    private function allowedCustomerBranchIds($user): array
+    {
+        if ($user->role === 'admin') {
+            return $user->store?->branches()->pluck('id')->all() ?? [];
+        }
+
+        return $user->branches()->pluck('branches.id')->all();
+    }
+
+    private function resolveCustomerBranchId(?int $branchId, $user): int
+    {
+        $allowedBranchIds = $this->allowedCustomerBranchIds($user);
+        $branchId = $branchId ?? ($user->branches()->first()?->id ?? ($allowedBranchIds[0] ?? null));
+
+        abort_unless($branchId && in_array((int) $branchId, $allowedBranchIds, true), 403, 'Invalid branch');
+
+        return (int) $branchId;
     }
 
     public function getPrintData(Request $request)

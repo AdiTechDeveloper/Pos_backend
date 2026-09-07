@@ -203,6 +203,8 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     Route::post('/sales-bills/customer-pay-due', [SalesBillController::class, 'customerPayDue']);
 
     // Advance wallet
+    Route::get('/customers', [CustomerController::class, 'index']);
+    Route::get('/customer/{id}', [CustomerController::class, 'show']);
     Route::post('/customers/advance', [CustomerController::class, 'addAdvance']);
     Route::get('/customers/wallet-balance/{mobile}', [CustomerController::class, 'walletBalance']);
     Route::get('/customers/{id}/wallet-history', [CustomerController::class, 'walletHistory']);
@@ -260,4 +262,4 @@ Route::put(
 Route::get(
     '/reports/advance-payments',
     [CustomerController::class, 'advanceReport']
-);
+)->middleware(['auth:sanctum', 'token.expiry', 'api.auth.response']);

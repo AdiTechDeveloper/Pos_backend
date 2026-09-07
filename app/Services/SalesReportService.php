@@ -109,14 +109,17 @@ class SalesReportService
     public function getInvoiceTable(array $f): array
     {
         $rows = DB::table('sales_bills as sb')
+            ->leftJoin('customers as c', 'c.id', '=', 'sb.customer_id')
             ->leftJoin('sales_bill_payments as sbp', function ($join) {
                 $join->on('sb.id', '=', 'sbp.sales_bill_id')
-                    ->where('sbp.status', '=', 'success'); // <--- Filter reversed out
+                    ->where('sbp.status', '=', 'success'); 
             })
             ->when(true, fn ($q) => $this->applyBillFilters($q, $f))
             ->select([
                 'sb.id',
                 'sb.bill_no',
+                'c.name as customer_name',
+                'c.mobile as customer_mobile',
                 'sb.created_at',
                 'sb.subtotal',
                 'sb.total_gst',
@@ -132,6 +135,8 @@ class SalesReportService
             ->groupBy(
                 'sb.id',
                 'sb.bill_no',
+                'c.name',
+                'c.mobile',
                 'sb.created_at',
                 'sb.subtotal',
                 'sb.total_gst',
