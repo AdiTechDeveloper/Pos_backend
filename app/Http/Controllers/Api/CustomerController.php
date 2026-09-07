@@ -86,6 +86,52 @@ class CustomerController extends Controller
         }
     }
 
+    public function update(Request $request, int $id)
+    {
+        $user = Auth::user();
+        if (! in_array($user->role, ['admin', 'manager'])) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthorized',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'mobile' => ['required', 'string', 'max:15', 'unique:customers,mobile,'.$id],
+            'add1' => ['nullable', 'string', 'max:255'],
+            'add2' => ['nullable', 'string', 'max:255'],
+            'area' => ['nullable', 'string', 'max:255'],
+            'city' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        try {
+            $customer = Customer::find($id);
+
+            if (! $customer) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Customer not found',
+                ], 404);
+            }
+
+            $customer->update($validated);
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Customer updated successfully',
+                'customer' => $customer,
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'An error occurred while updating the customer details.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
     public function walletBalance($mobile)
     {
         $customer = Customer::where('mobile', $mobile)->first();
