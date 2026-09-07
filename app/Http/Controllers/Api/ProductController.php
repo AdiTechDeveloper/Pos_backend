@@ -118,6 +118,14 @@ class ProductController extends Controller
                     ->whereColumn('inventories.sold_qty', '<', 'inventories.qty')
                     ->where('inventories.expiry_date', '>=', now()->toDateString()),
             ])
+            ->addSelect([
+                'last_purchase_bill_no' => Inventory::select('purchase_bills.inward_no')
+                    ->join('purchase_bills', 'purchase_bills.id', '=', 'inventories.purchase_bill_id')
+                    ->whereColumn('inventories.product_id', 'products.id')
+                    ->whereIn('inventories.branch_id', $branchIds)
+                    ->latest('inventories.created_at')
+                    ->limit(1),
+            ])
             ->orderByRaw('nearest_expiry IS NULL, nearest_expiry ASC')
             ->get();
 
@@ -128,20 +136,28 @@ class ProductController extends Controller
         }
 
         $products = $products->map(function ($product) {
-            $batches = $product->inventories->map(function ($inv) {
+            $groupedBatches = $product->inventories->groupBy('batch_no');
+
+            $batches = $groupedBatches->map(function ($invGroup) {
+                $first = $invGroup->first(); 
+
+                $totalQty = $invGroup->sum('qty');
+                $totalSoldQty = $invGroup->sum('sold_qty');
+                $totalFree = $invGroup->sum('free');
+
                 return [
-                    'id' => $inv->id,
-                    'batch_no' => $inv->batch_no,
-                    'mrp' => $inv->mrp,
-                    'cost_price' => $inv->cost_price,
-                    'selling_price' => $inv->selling_price,
-                    'qty_available' => $inv->qty - $inv->sold_qty,
-                    'expiry_date' => $inv->expiry_date,
-                    'is_opening' => $inv->is_opening,
-                    'batch_barcode' => $inv->batch_barcode,
-                    'free' => $inv->free,
-                    'qty' => $inv->qty,
-                    'sold_qty' => $inv->sold_qty,
+                    'id' => $first->id,
+                    'batch_no' => $first->batch_no,
+                    'mrp' => $first->mrp,
+                    'cost_price' => $first->cost_price,
+                    'selling_price' => $first->selling_price,
+                    'qty' => $totalQty,
+                    'sold_qty' => $totalSoldQty,
+                    'free' => $totalFree,
+                    'qty_available' => $totalQty - $totalSoldQty, // Total available stock
+                    'expiry_date' => $first->expiry_date,
+                    'is_opening' => $first->is_opening,
+                    'batch_barcode' => $first->batch_barcode,
                 ];
             })->values();
 
@@ -151,7 +167,7 @@ class ProductController extends Controller
             $data['min_price'] = $prices->min();
             $data['max_price'] = $prices->max();
             $data['has_multiple_prices'] = $prices->unique()->count() > 1;
-            $data['batch_count'] = $batches->count();
+            $data['batch_count'] = $batches->count(); 
             $data['batches'] = $batches;
             unset($data['inventories']);
 
@@ -268,6 +284,7 @@ class ProductController extends Controller
             $request->validate([
                 'name' => 'required|string',
                 'is_price_override' => 'nullable|boolean',
+                'barcode' => 'nullable|string|unique:products,barcode,'.$id,
             ]);
 
             $user = Auth::user();
@@ -293,6 +310,7 @@ class ProductController extends Controller
             $product->update([
                 'name' => $request->name,
                 'sku' => $request->sku,
+                'barcode' => $request->barcode,
                 'brand_id' => $request->brand_id,
                 'category_id' => $request->category_id,
                 'hsn_code' => $request->hsn_code,

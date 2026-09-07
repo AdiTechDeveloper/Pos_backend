@@ -61,11 +61,10 @@ class SalesReportService
 
     public function getKpis(array $f): array
     {
-        // Core bill-level aggregates
         $bill = DB::table('sales_bills as sb')
             ->when(true, fn ($q) => $this->applyBillFilters($q, $f))
             ->selectRaw('
-                COUNT(sb.id)                        AS total_bills,
+                COUNT(sb.id)                         AS total_bills,
                 COALESCE(SUM(sb.total_amount), 0)   AS gross_sales,
                 COALESCE(SUM(sb.total_cogs), 0)     AS total_cogs,
                 COALESCE(SUM(sb.total_profit), 0)   AS total_profit,
@@ -75,7 +74,6 @@ class SalesReportService
             ')
             ->first();
 
-        // Tax breakdown from line items (single JOIN avoids N+1)
         $tax = DB::table('sales_bills as sb')
             ->join('sales_bill_lines as sbl', 'sbl.sales_bill_id', '=', 'sb.id')
             ->when(true, fn ($q) => $this->applyBillFilters($q, $f))
@@ -111,7 +109,10 @@ class SalesReportService
     public function getInvoiceTable(array $f): array
     {
         $rows = DB::table('sales_bills as sb')
-            ->leftJoin('sales_bill_payments as sbp', 'sb.id', '=', 'sbp.sales_bill_id')
+            ->leftJoin('sales_bill_payments as sbp', function ($join) {
+                $join->on('sb.id', '=', 'sbp.sales_bill_id')
+                    ->where('sbp.status', '=', 'success'); // <--- Filter reversed out
+            })
             ->when(true, fn ($q) => $this->applyBillFilters($q, $f))
             ->select([
                 'sb.id',
@@ -125,8 +126,8 @@ class SalesReportService
                 'sb.total_profit',
                 'sb.payment_status',
                 'sb.bill_status',
-                DB::raw('GROUP_CONCAT(DISTINCT sbp.method) as payment_methods'),
-                DB::raw('SUM(sbp.amount) as payment_total'),
+                DB::raw("COALESCE(GROUP_CONCAT(DISTINCT sbp.method SEPARATOR ','), 'N/A') as payment_methods"),
+                DB::raw('COALESCE(SUM(sbp.amount), 0) as payment_total'),
             ])
             ->groupBy(
                 'sb.id',
@@ -144,7 +145,6 @@ class SalesReportService
             ->orderByDesc('sb.created_at')
             ->get();
 
-        // Footer totals
         $totals = [
             'subtotal' => $rows->sum('subtotal'),
             'total_gst' => $rows->sum('total_gst'),
@@ -204,7 +204,6 @@ class SalesReportService
 
         $grandTotal = $rows->sum('total_collected');
 
-        // Attach percentage share per method
         $rows = $rows->map(function ($row) use ($grandTotal) {
             $row->share_pct = $grandTotal > 0
                 ? round(($row->total_collected / $grandTotal) * 100, 1)
@@ -213,7 +212,6 @@ class SalesReportService
             return $row;
         });
 
-        // Add pending/due amounts if any exist
         $dueAmount = DB::table('sales_bills as sb')
             ->when(true, fn ($q) => $this->applyBillFilters($q, $f))
             ->where('sb.due_amount', '>', 0)
@@ -230,13 +228,16 @@ class SalesReportService
     public function getPaymentSummary(array $f): array
     {
         $rows = DB::table('sales_bills as sb')
-            ->leftJoin('sales_bill_payments as sbp', 'sb.id', '=', 'sbp.sales_bill_id')
+            ->leftJoin('sales_bill_payments as sbp', function ($join) {
+                $join->on('sb.id', '=', 'sbp.sales_bill_id')
+                    ->where('sbp.status', '=', 'success'); 
+            })
             ->when(true, fn ($q) => $this->applyBillFilters($q, $f))
             ->select(
                 'sb.id',
                 'sb.bill_no',
-                DB::raw('GROUP_CONCAT(DISTINCT sbp.method) as methods'),
-                DB::raw('SUM(sbp.amount) as total_amount')
+                DB::raw("GROUP_CONCAT(DISTINCT sbp.method SEPARATOR ',') as methods"),
+                DB::raw('COALESCE(SUM(sbp.amount), 0) as total_amount')
             )
             ->groupBy('sb.id', 'sb.bill_no')
             ->get();
@@ -249,30 +250,23 @@ class SalesReportService
         ];
 
         foreach ($rows as $row) {
-            $methods = explode(',', $row->methods);
+            if (! $row->methods) {
+                continue;
+            }
+
+            $methods = array_filter(explode(',', $row->methods));
 
             if (count($methods) > 1) {
-                // Split
+                // Split Payment
                 $result['split']['count']++;
-                $result['split']['amount'] += $row->total_amount;
+                $result['split']['amount'] += (float) $row->total_amount;
                 $result['split']['bills'][] = $row->bill_no;
-
             } else {
                 $method = strtolower($methods[0]);
 
-                if ($method === 'cash') {
-                    $result['cash']['count']++;
-                    $result['cash']['amount'] += $row->total_amount;
-                }
-
-                if ($method === 'online') {
-                    $result['online']['count']++;
-                    $result['online']['amount'] += $row->total_amount;
-                }
-
-                if ($method === 'wallet') {
-                    $result['wallet']['count']++;
-                    $result['wallet']['amount'] += $row->total_amount;
+                if (isset($result[$method])) {
+                    $result[$method]['count']++;
+                    $result[$method]['amount'] += (float) $row->total_amount;
                 }
             }
         }
@@ -298,7 +292,7 @@ class SalesReportService
                 sbl.selling_price,
                 ROUND(
                     (sbl.original_price - sbl.override_price) * sbl.qty, 2
-                )                                   AS value_leakage
+                )                                                   AS value_leakage
             ')
             ->orderByRaw('value_leakage DESC')
             ->get();

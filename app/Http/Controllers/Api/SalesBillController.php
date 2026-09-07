@@ -24,18 +24,21 @@ class SalesBillController extends Controller
         $request->validate(['barcode' => 'required']);
 
         $user = Auth::user();
-        $branchIds = $user->branches->pluck('id')->toArray();
 
+        $branchIds = array_map('intval', $user->branches->pluck('id')->toArray());
         $barcode = trim($request->barcode);
+        $today = date('Y-m-d');
 
-        // Find product by manufacturer barcode
         $product = Product::with('gstRate')
             ->where('barcode', $barcode)
             ->where('store_id', $user->store_id)
             ->first();
 
         if (! $product) {
-            $inventory = Inventory::where('batch_barcode', $barcode)
+            $inventory = Inventory::where(function ($q) use ($barcode) {
+                $q->where('batch_barcode', $barcode)
+                    ->orWhere('batch_barcode', 'LIKE', $barcode.'-%');
+            })
                 ->whereIn('branch_id', $branchIds)
                 ->first();
 
@@ -48,44 +51,56 @@ class SalesBillController extends Controller
             return response()->json(['status' => false, 'message' => 'Product not found'], 404);
         }
 
-        // Fetch all unique batches for this product in the user's branches
-        // $batches = Inventory::where('product_id', $product->id)
-        //     ->whereIn('branch_id', $branchIds)
-        //     ->whereColumn('sold_qty', '<', 'qty')
-        //     ->select('id', 'batch_no', 'batch_barcode', 'mrp', 'cost_price', 'selling_price', 'expiry_date', 'qty', 'sold_qty')
-        //     ->get()
-        //     ->groupBy('batch_barcode')
-        //     ->map(function ($group) {
-        //         $first = $group->first();
-
         $batches = Inventory::where('product_id', $product->id)
             ->whereIn('branch_id', $branchIds)
-            ->whereColumn('sold_qty', '<', 'qty')
-            ->where(function ($q) {
+            ->whereRaw('(qty - sold_qty) > 0')
+            ->where(function ($q) use ($today) {
                 $q->whereNull('expiry_date')
-                    ->orWhere('expiry_date', '>=', now()->toDateString());
+                    ->orWhere('expiry_date', '>=', $today);
             })
-            ->orderByRaw('expiry_date IS NULL, expiry_date ASC') // FEFO: jaldi expire hone wali batch pehle
-            ->select('id', 'batch_no', 'batch_barcode', 'mrp', 'cost_price', 'selling_price', 'expiry_date', 'qty', 'sold_qty')
+            ->orderByRaw('expiry_date IS NULL, expiry_date ASC') // FEFO
             ->get()
             ->groupBy('batch_barcode')
             ->map(function ($group) {
-                $first = $group->first();
+
+                $validItem = $group->first(function ($i) {
+                    return ($i->qty - $i->sold_qty) > 0;
+                });
+
+                if (! $validItem) {
+                    return null;
+                }
 
                 return [
-                    'inventory_id' => $first->id, // Reference ID for the store method
-                    'batch_no' => $first->batch_no,
-                    'batch_barcode' => $first->batch_barcode,
-                    'mrp' => $first->mrp,
-                    'selling_price' => $first->selling_price,
-                    'cost_price' => $first->cost_price,
-                    'expiry_date' => $first->expiry_date,
-                    'total_stock' => $group->sum(fn ($i) => $i->qty - $i->sold_qty),
+                    'inventory_id' => $validItem->id,
+                    'batch_no' => $validItem->batch_no,
+                    'batch_barcode' => $validItem->batch_barcode,
+                    'mrp' => (string) $validItem->mrp,
+                    'selling_price' => (string) $validItem->selling_price,
+                    'cost_price' => (string) $validItem->cost_price,
+                    'expiry_date' => $validItem->expiry_date,
+                    'total_stock' => (float) $group->sum(fn ($i) => $i->qty - $i->sold_qty),
                 ];
-            })->values();
+            })
+            ->filter()
+            ->sortBy('expiry_date')
+            ->values();
 
         if ($batches->isEmpty()) {
-            return response()->json(['status' => false, 'message' => 'Product found but out of stock'], 404);
+
+            $hasExpiredStock = Inventory::where('product_id', $product->id)
+                ->whereIn('branch_id', $branchIds)
+                ->whereRaw('(qty - sold_qty) > 0')
+                ->whereNotNull('expiry_date')
+                ->where('expiry_date', '<', $today)
+                ->exists();
+
+            return response()->json([
+                'status' => false,
+                'message' => $hasExpiredStock
+                    ? 'All available stock is expired'
+                    : 'Product found but out of stock',
+            ], 404);
         }
 
         return response()->json([
@@ -804,6 +819,7 @@ class SalesBillController extends Controller
             'store',
             'branch',
             'user',
+            'customer',
             'lines.product',
             'lines.inventory',
             'lines.gstRate',
@@ -855,6 +871,11 @@ class SalesBillController extends Controller
                 'branch' => [
                     'name' => $bill->branch->name,
                     'address' => $bill->branch->address,
+                ],
+
+                'customer' => [
+                    'name' => $bill->customer->name ?? $bill->customer_name ?? 'N/A',
+                    'mobile' => $bill->customer->mobile ?? $bill->customer->phone ?? $bill->customer_mobile ?? 'N/A',
                 ],
 
                 'bill' => [
