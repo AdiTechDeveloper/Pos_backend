@@ -8,6 +8,7 @@ class Customer extends Model
 {
     protected $fillable = [
         'branch_id', 'name', 'mobile', 'add1', 'add2', 'area', 'city', 'opening_balance',
+        'loyalty_points',
     ];
 
     public function branch()

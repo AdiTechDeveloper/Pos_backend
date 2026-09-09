@@ -44,7 +44,7 @@ class User extends Authenticatable
 
     public function branches(): BelongsToMany
     {
-        return $this->belongsToMany(Branch::class, 'branch_staff');
+        return $this->belongsToMany(Branch::class, 'branch_staff')->withTimestamps();
     }
 
     /**

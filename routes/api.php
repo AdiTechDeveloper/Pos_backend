@@ -209,6 +209,7 @@ Route::middleware(['auth:sanctum', 'token.expiry', 'api.auth.response'])->group(
     Route::get('/customers/wallet-balance/{mobile}', [CustomerController::class, 'walletBalance']);
     Route::get('/customers/{id}/wallet-history', [CustomerController::class, 'walletHistory']);
     Route::put('/customer/{id}', [CustomerController::class, 'update']);
+    Route::get('/customers/loyalty-balance/{mobile}', [CustomerController::class, 'loyaltyBalance']);
 
     // Payment method change
     Route::post('/sales-bills/{id}/change-payment', [SalesBillController::class, 'changePayment']);

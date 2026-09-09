@@ -261,4 +261,13 @@ class CustomerController extends Controller
 
         return (int) $branchId;
     }
+
+    public function loyaltyBalance($mobile)
+    {
+        $customer = Customer::where('mobile', $mobile)->first();
+
+        return response()->json([
+            'balance' => $customer ? (float) $customer->loyalty_points : 0,
+        ]);
+    }
 }

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Models\CustomerLoyaltyTransaction;
 use App\Models\CustomerWalletTransaction;
 use App\Models\GstOutputLedger;
 use App\Models\Inventory;
@@ -209,6 +210,343 @@ class SalesBillController extends Controller
         }
     }
 
+    // public function store(Request $request)
+    // {
+    //     $idempotencyKey = $request->header('Idempotency-Key');
+
+    //     if (! $idempotencyKey) {
+    //         return response()->json(['error' => 'Missing Idempotency Key'], 400);
+    //     }
+
+    //     // Prevent duplicate bill creation
+    //     $existing = SalesBill::where('last_idempotency_key_store', $idempotencyKey)->first();
+    //     if ($existing) {
+    //         return response()->json([
+    //             'success' => true,
+    //             'message' => 'Duplicate Store Request Ignored',
+    //             'data' => $existing,
+    //         ], 200);
+    //     }
+
+    //     $request->validate([
+    //         'lines' => 'required|array|min:1',
+    //         'lines.*.product_id' => 'required|integer',
+    //         'lines.*.inventory_id' => 'required|integer',
+    //         'lines.*.qty' => 'required|numeric|min:0.01',
+
+    //         'customer_id' => 'nullable|exists:customers,id',
+    //         'customer' => 'required|array',
+    //         'customer.name' => 'nullable|string|max:255',
+    //         'customer.mobile' => 'required|string|max:15',
+    //         'branch_id' => 'nullable|integer',
+    //         'payment_type' => 'required|in:cash,online,split,credit,wallet',
+    //         'cash_received' => 'nullable|numeric|min:0',
+    //         'online_received' => 'nullable|numeric|min:0',
+    //         'balance_return' => 'nullable|numeric|min:0',
+    //         'lines.*.selling_price' => 'nullable|numeric|min:0',
+    //         'lines.*.original_price' => 'nullable|numeric|min:0',
+    //         'lines.*.is_price_overridden' => 'nullable|boolean',
+    //         'selected_date' => 'nullable|date',
+    //     ]);
+
+    //     try {
+    //         DB::beginTransaction();
+
+    //         $user = Auth::user();
+    //         $branchId = $this->resolveCustomerBranchId($request->branch_id, $user);
+
+    //         if (! $branchId) {
+    //             return response()->json([
+    //                 'status' => false,
+    //                 'message' => 'User has no branch assigned.',
+    //             ], 400);
+    //         }
+
+    //         // Determine Target Date First
+    //         $billDate = $request->filled('selected_date')
+    //             ? Carbon::parse($request->input('selected_date'))->setTimeFrom(now())
+    //             : now();
+
+    //         $datePrefix = $billDate->format('ymd');
+
+    //         // Count existing bills specifically for the target date
+    //         $todayCount = SalesBill::where('store_id', $user->store_id)
+    //             ->where('branch_id', $branchId)
+    //             ->whereDate('created_at', $billDate->toDateString())
+    //             ->count();
+
+    //         $sequence = str_pad($todayCount + 1, 4, '0', STR_PAD_LEFT);
+
+    //         $storePad = str_pad($user->store_id, 2, '0', STR_PAD_LEFT);
+    //         $branchPad = str_pad($branchId, 2, '0', STR_PAD_LEFT);
+    //         $userPad = str_pad($user->id, 2, '0', STR_PAD_LEFT);
+
+    //         $billNo = $storePad.$branchPad.$userPad.$datePrefix.$sequence;
+
+    //         // Create Sales Bill Record
+    //         $bill = SalesBill::create([
+    //             'store_id' => $user->store_id,
+    //             'branch_id' => $branchId,
+    //             'user_id' => $user->id,
+    //             'bill_no' => $billNo,
+    //             'bill_status' => 'pending',
+    //             'payment_status' => 'unpaid',
+    //             'created_by' => $user->id,
+    //             'last_idempotency_key_store' => $idempotencyKey,
+    //             'customer_id' => $request->customer_id,
+    //             'payment_type' => $request->payment_type,
+    //             'created_at' => $billDate,
+    //         ]);
+
+    //         $subtotal = 0;
+    //         $totalGst = 0;
+    //         $totalSaved = 0;
+    //         $totalCogs = 0;
+    //         $totalProfit = 0;
+    //         $processedProducts = [];
+
+    //         foreach ($request->lines as $lineData) {
+    //             $product = Product::with('gstRate')->findOrFail($lineData['product_id']);
+
+    //             // Get specific batch info from inventory table
+    //             $selectedInventory = Inventory::where('id', $lineData['inventory_id'])
+    //                 ->where('branch_id', $branchId)
+    //                 ->firstOrFail();
+
+    //             $batchBarcode = $selectedInventory->batch_barcode;
+    //             $inventoryPrice = (float) $selectedInventory->selling_price;
+    //             $isOverridden = ! empty($lineData['is_price_overridden']) && $lineData['is_price_overridden'] == true;
+    //             $price = $isOverridden && isset($lineData['selling_price'])
+    //                 ? (float) $lineData['selling_price']
+    //                 : $inventoryPrice;
+
+    //             $originalPrice = (float) ($lineData['original_price'] ?? $inventoryPrice);
+    //             $overridePrice = $isOverridden ? $price : null;
+    //             $mrp = (float) $selectedInventory->mrp;
+
+    //             if ($selectedInventory->qty <= $selectedInventory->sold_qty) {
+    //                 throw new \Exception('Stock already exhausted for this batch.');
+    //             }
+
+    //             if ($price <= 0) {
+    //                 throw new \Exception("Invalid selling price for {$product->name} in this batch.");
+    //             }
+
+    //             $requiredQty = (float) $lineData['qty'];
+
+    //             // Fetch rows for this batch (using $billDate for expiry checks if backdating)
+    //             $batchRows = Inventory::where('product_id', $product->id)
+    //                 ->where('batch_barcode', $batchBarcode)
+    //                 ->where('branch_id', $branchId)
+    //                 ->whereColumn('sold_qty', '<', 'qty')
+    //                 ->where(function ($q) use ($billDate) {
+    //                     $q->whereNull('expiry_date')
+    //                         ->orWhere('expiry_date', '>=', $billDate);
+    //                 })
+    //                 ->orderBy('free', 'asc')
+    //                 ->lockForUpdate()
+    //                 ->get();
+
+    //             $availableStock = $batchRows->sum(fn ($inv) => $inv->qty - $inv->sold_qty);
+
+    //             if ($availableStock < $requiredQty) {
+    //                 throw new \Exception("Insufficient stock in batch {$selectedInventory->batch_no} for {$product->name}");
+    //             }
+
+    //             // COGS and Stock Deduction
+    //             $remaining = $requiredQty;
+    //             $totalLineCogs = 0;
+
+    //             foreach ($batchRows as $batch) {
+    //                 if ($remaining <= 0) {
+    //                     break;
+    //                 }
+    //                 $available = $batch->qty - $batch->sold_qty;
+    //                 if ($available <= 0) {
+    //                     continue;
+    //                 }
+
+    //                 $consume = min($available, $remaining);
+
+    //                 $purchaseRate = (float) $batch->cost_price;
+    //                 $gstRate = $product->gstRate->rate ?? 0;
+
+    //                 if ($batch->purchase_gst_inclusive && $gstRate > 0) {
+    //                     $purchaseRate = $purchaseRate * 100 / (100 + $product->gstRate->rate);
+    //                 }
+
+    //                 $totalLineCogs += ($purchaseRate * $consume);
+    //                 $batch->increment('sold_qty', $consume);
+    //                 $remaining -= $consume;
+    //             }
+
+    //             // Tax Logic
+    //             $gstRate = $product->gstRate->rate ?? 0;
+    //             if ($gstRate > 0) {
+    //                 if ($product->gst_inclusive) {
+    //                     $taxable = ($price * 100 / (100 + $gstRate)) * $requiredQty;
+    //                     $totalLineGst = ($price * $requiredQty) - $taxable;
+    //                 } else {
+    //                     $taxable = $price * $requiredQty;
+    //                     $totalLineGst = ($taxable * $gstRate) / 100;
+    //                 }
+    //             } else {
+    //                 $taxable = $price * $requiredQty;
+    //                 $totalLineGst = 0;
+    //             }
+
+    //             // State-based Tax Split
+    //             $storeState = $user->store->state;
+    //             $branchState = $user->branches->first()->state;
+    //             $cgst = $sgst = $igst = 0;
+
+    //             if ($gstRate > 0) {
+    //                 if ($storeState == $branchState) {
+    //                     $cgst = $sgst = $totalLineGst / 2;
+    //                 } else {
+    //                     $igst = $totalLineGst;
+    //                 }
+    //             }
+
+    //             $lineAmount = $product->gst_inclusive ? ($price * $requiredQty) : ($taxable + $totalLineGst);
+
+    //             $netRevenue = $taxable;
+    //             $profit = $netRevenue - $totalLineCogs;
+
+    //             // Record Line
+    //             $salesLine = SalesBillLine::create([
+    //                 'sales_bill_id' => $bill->id,
+    //                 'product_id' => $product->id,
+    //                 'branch_id' => $branchId,
+    //                 'inventory_id' => $selectedInventory->id,
+    //                 'qty' => $requiredQty,
+    //                 'rate' => $price,
+    //                 'selling_price' => $price,
+    //                 'original_price' => $originalPrice,
+    //                 'override_price' => $overridePrice,
+    //                 'is_price_overridden' => $isOverridden ? 1 : 0,
+    //                 'taxable_amount' => $taxable,
+    //                 'amount' => $lineAmount,
+    //                 'cgst' => $cgst,
+    //                 'sgst' => $sgst,
+    //                 'igst' => $igst,
+    //                 'total_gst' => $totalLineGst,
+    //                 'cogs' => $totalLineCogs,
+    //                 'profit' => $profit,
+    //                 'created_at' => $billDate,
+    //             ]);
+
+    //             // Log price override for audit report
+    //             if ($isOverridden) {
+    //                 \App\Models\PriceOverride::create([
+    //                     'sale_bill_id' => $bill->id,
+    //                     'sale_bill_line_id' => $salesLine->id,
+    //                     'product_id' => $product->id,
+    //                     'branch_id' => $branchId,
+    //                     'original_price' => $originalPrice,
+    //                     'override_price' => $price,
+    //                     'difference' => round($originalPrice - $price, 2),
+    //                     'qty' => $requiredQty,
+    //                     'total_loss' => round(($originalPrice - $price) * $requiredQty, 2),
+    //                     'overridden_by' => $user->id,
+    //                     'created_at' => $billDate,
+    //                 ]);
+    //             }
+
+    //             // GST Ledger Entry
+    //             if ($totalLineGst > 0) {
+    //                 GstOutputLedger::create([
+    //                     'sales_bill_id' => $bill->id,
+    //                     'sales_bill_line_id' => $salesLine->id,
+    //                     'product_id' => $product->id,
+    //                     'gst_rate_id' => $product->gst_rate_id,
+    //                     'cgst' => $cgst,
+    //                     'sgst' => $sgst,
+    //                     'igst' => $igst,
+    //                     'total_gst' => $totalLineGst,
+    //                     'created_at' => $billDate,
+    //                 ]);
+    //             }
+
+    //             $subtotal += $lineAmount;
+    //             $totalGst += $totalLineGst;
+    //             $totalCogs += $totalLineCogs;
+    //             $totalProfit += ($taxable - $totalLineCogs);
+    //             $totalSaved += ($mrp - $price) * $requiredQty;
+    //             $processedProducts[] = $product->id;
+    //         }
+
+    //         // Final Bill Update
+    //         $bill->update([
+    //             'subtotal' => $subtotal,
+    //             'total_gst' => $totalGst,
+    //             'total_amount' => $subtotal,
+    //             'total_saved' => $totalSaved,
+    //             'total_cogs' => $totalCogs,
+    //             'total_profit' => $totalProfit,
+    //             // 'cash_received' => $request->payment_type === 'credit' ? 0 : ($request->cash_received ?? 0),
+    //             // 'balance_return' => $request->payment_type === 'credit' ? 0 : ($request->balance_return ?? 0),
+    //         ]);
+
+    //         $customer = Customer::updateOrCreate(
+    //             [
+    //                 'branch_id' => $branchId,
+    //                 'mobile' => $request->customer['mobile'],
+    //             ],
+    //             [
+    //                 'name' => $request->customer['name'] ?? null,
+    //                 'add1' => $request->customer['add1'] ?? null,
+    //                 'add2' => $request->customer['add2'] ?? null,
+    //                 'area' => $request->customer['area'] ?? null,
+    //                 'city' => $request->customer['city'] ?? null,
+    //             ]
+    //         );
+
+    //         $bill->customer_id = $customer->id;
+
+    //         // Payment Logic
+    //         if ($request->payment_type === 'credit') {
+    //             $bill->paid_amount = 0;
+    //             $bill->due_amount = $subtotal;
+    //             $bill->payment_status = 'unpaid';
+    //         } else {
+    //             $cashReceived = (float) ($request->cash_received ?? 0);
+    //             $onlineReceived = (float) ($request->online_received ?? 0);
+    //             $paidAmount = min($cashReceived + $onlineReceived, $subtotal);
+
+    //             $bill->cash_received = $cashReceived;
+    //             $bill->online_received = $onlineReceived;
+    //             $bill->paid_amount = $paidAmount;
+    //             $bill->due_amount = max($subtotal - $paidAmount, 0);
+
+    //             if ($bill->due_amount == 0 && $paidAmount > 0) {
+    //                 $bill->payment_status = 'paid';
+    //             } elseif ($paidAmount > 0) {
+    //                 $bill->payment_status = 'partial';
+    //             } else {
+    //                 $bill->payment_status = 'unpaid';
+    //             }
+    //         }
+
+    //         $bill->save();
+
+    //         DB::commit();
+
+    //         return response()->json([
+    //             'status' => true,
+    //             'message' => 'Sales bill created successfully',
+    //             'data' => $bill->load('lines'),
+    //         ]);
+    //     } catch (\Exception $e) {
+    //         DB::rollBack();
+
+    //         return response()->json([
+    //             'status' => false,
+    //             'message' => $e->getMessage(),
+    //         ], 500);
+    //     }
+    // }
+
     public function store(Request $request)
     {
         $idempotencyKey = $request->header('Idempotency-Key');
@@ -246,6 +584,7 @@ class SalesBillController extends Controller
             'lines.*.original_price' => 'nullable|numeric|min:0',
             'lines.*.is_price_overridden' => 'nullable|boolean',
             'selected_date' => 'nullable|date',
+            'points_redeemed' => 'nullable|numeric|min:0', // NEW: loyalty points customer wants to redeem
         ]);
 
         try {
@@ -503,22 +842,101 @@ class SalesBillController extends Controller
 
             $bill->customer_id = $customer->id;
 
-            // Payment Logic
+            // ============================================================
+            // Loyalty Points — Redemption + Earning
+            // ============================================================
+            // Lock customer row so concurrent bills for same customer
+            // can't both read a stale points balance (race condition safety)
+            $customer = Customer::where('id', $customer->id)->lockForUpdate()->first();
+
+            $loyaltyBalance = (float) $customer->loyalty_points;
+            $requestedRedeemPoints = (float) $request->input('points_redeemed', 0);
+
+            $pointsRedeemed = 0;
+            $pointsDiscountAmount = 0;
+
+            // 1 point = ₹1
+            $pointValue = 1;
+
+            if ($requestedRedeemPoints > 0) {
+                if ($requestedRedeemPoints > $loyaltyBalance) {
+                    throw new \Exception("Insufficient loyalty points. Available: {$loyaltyBalance}, Requested: {$requestedRedeemPoints}");
+                }
+
+                // Can't discount more than the bill is worth
+                $maxRedeemableAmount = $subtotal;
+                $pointsDiscountAmount = min($requestedRedeemPoints * $pointValue, $maxRedeemableAmount);
+                $pointsRedeemed = round($pointsDiscountAmount / $pointValue, 2);
+            }
+
+            // Payable amount = bill total minus redemption discount
+            $payableAmount = max($subtotal - $pointsDiscountAmount, 0);
+
+            // Earn 1% of the NET payable amount (after redemption), not the gross subtotal
+            // e.g. ₹100 bill, ₹10 redeemed → payable ₹90 → earn 0.9 points
+            $pointsEarned = round($payableAmount * 0.01, 2);
+
+            $runningBalance = $loyaltyBalance;
+
+            if ($pointsRedeemed > 0) {
+                $balanceBefore = $runningBalance;
+                $runningBalance -= $pointsRedeemed;
+
+                CustomerLoyaltyTransaction::create([
+                    'customer_id' => $customer->id,
+                    'sales_bill_id' => $bill->id,
+                    'type' => 'redeemed',
+                    'points' => $pointsRedeemed,
+                    'balance_before' => $balanceBefore,
+                    'balance_after' => $runningBalance,
+                    'note' => "Redeemed on bill {$bill->bill_no}",
+                    'created_by' => $user->id,
+                ]);
+            }
+
+            if ($pointsEarned > 0) {
+                $balanceBefore = $runningBalance;
+                $runningBalance += $pointsEarned;
+
+                CustomerLoyaltyTransaction::create([
+                    'customer_id' => $customer->id,
+                    'sales_bill_id' => $bill->id,
+                    'type' => 'earned',
+                    'points' => $pointsEarned,
+                    'balance_before' => $balanceBefore,
+                    'balance_after' => $runningBalance,
+                    'note' => "Earned on bill {$bill->bill_no} (1% of net payable amount)",
+                    'created_by' => $user->id,
+                ]);
+            }
+
+            $customer->loyalty_points = $runningBalance;
+            $customer->save();
+
+            $bill->points_redeemed = $pointsRedeemed;
+            $bill->points_discount_amount = $pointsDiscountAmount;
+            $bill->points_earned = $pointsEarned;
+            // ============================================================
+            // END Loyalty Points
+            // ============================================================
+
+            // Payment Logic (uses $payableAmount, already net of points discount)
             if ($request->payment_type === 'credit') {
                 $bill->paid_amount = 0;
-                $bill->due_amount = $subtotal;
+                $bill->due_amount = $payableAmount;
                 $bill->payment_status = 'unpaid';
             } else {
                 $cashReceived = (float) ($request->cash_received ?? 0);
                 $onlineReceived = (float) ($request->online_received ?? 0);
-                $paidAmount = min($cashReceived + $onlineReceived, $subtotal);
+                $paidAmount = min($cashReceived + $onlineReceived, $payableAmount);
 
                 $bill->cash_received = $cashReceived;
                 $bill->online_received = $onlineReceived;
                 $bill->paid_amount = $paidAmount;
-                $bill->due_amount = max($subtotal - $paidAmount, 0);
+                $bill->due_amount = max($payableAmount - $paidAmount, 0);
 
-                if ($bill->due_amount == 0 && $paidAmount > 0) {
+                if ($bill->due_amount == 0) {
+                    // Covers "fully paid via cash/online" AND "fully covered by points redemption"
                     $bill->payment_status = 'paid';
                 } elseif ($paidAmount > 0) {
                     $bill->payment_status = 'partial';
@@ -612,6 +1030,11 @@ class SalesBillController extends Controller
                 ]);
             }
 
+            // NEW: net payable amount = bill total minus loyalty points discount.
+            // All due/paid/balance_return math below must use this, not raw total_amount,
+            // otherwise a redeemed bill will always show a false "due" amount.
+            $payableAmount = max((float) $bill->total_amount - (float) $bill->points_discount_amount, 0);
+
             $totalPaid = 0;
             $cashReceivedSum = 0;
             $onlineReceivedSum = 0;
@@ -640,11 +1063,11 @@ class SalesBillController extends Controller
             $bill->cash_received = (float) $bill->cash_received + $cashReceivedSum;
             $bill->online_received = (float) $bill->online_received + $onlineReceivedSum;
 
-            $bill->paid_amount = min($bill->paid_amount + $totalPaid, $bill->total_amount);
-            $bill->due_amount = max($bill->total_amount - $bill->paid_amount, 0);
+            $bill->paid_amount = min($bill->paid_amount + $totalPaid, $payableAmount);
+            $bill->due_amount = max($payableAmount - $bill->paid_amount, 0);
 
             if ($cashReceivedSum > 0) {
-                $cashAppliedToThisBill = min($cashReceivedSum, $bill->total_amount - ($bill->paid_amount - $totalPaid));
+                $cashAppliedToThisBill = min($cashReceivedSum, $payableAmount - ($bill->paid_amount - $totalPaid));
                 $bill->balance_return = max($cashReceivedSum - $cashAppliedToThisBill, 0);
             }
 
